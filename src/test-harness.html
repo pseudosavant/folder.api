@@ -1,0 +1,237 @@
+﻿<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <title>folder.api</title>
+  <meta charset='utf-8'>
+  <meta name='description' content="folder.api turns your HTTP server's file browsing into an API you can consume via JavaScript"/>
+  <meta name='version' content='1.0'>
+  <meta name='Copyright' content=' ©2020 Paul Ellis'>
+  <meta name='license' content='https://opensource.org/licenses/MIT'>
+  <style>
+    *,
+    *::before,
+    *::after {
+      -moz-box-sizing: border-box;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box;
+
+      user-select: none;
+
+      line-height: 1rem;
+    }
+
+    html {
+      font-family: 'Segoe UI', Calibri, Arial, Helvetica, sans-serif;
+      font-size: 12px;
+      background-color: #000;
+      color: #FFF;
+    }
+
+    body {
+      padding: 0;
+      margin: 0 auto;
+      display: flex;
+      justify-content: start;
+      align-items: flex-start;
+    }
+
+    pre {
+      font-family: Consolas, monospace;
+      width: 50vw;
+      padding: 1em;
+      margin: 0;
+    }
+
+    pre:nth-of-type(even) {
+      background: #222;
+    }
+
+    pre[label]::before {
+      content: attr(label);
+      display: block;
+      line-height: 1.5em;
+      font-size: 1.5em;
+      font-weight: bold;
+      border-bottom: 2px solid #AAA;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <script src="folder.api.js"></script>
+  <script defer>
+    (function harnessIIFE(){
+      // main()
+
+      const httpServer = 'server.local';
+      async function main() {
+        const urls = [
+          {
+            label: 'NGINX',
+            url: `https://${httpServer}/code/folder.api/server/nginx/`, // This URL must return an NGINX server agent to work correctly
+            checks: {
+              folder: [hasDate, hasSize, hasName, hasType],
+              file: [hasDate, hasSize, hasName],
+              validator: 'nginx'
+            }
+          },
+          {
+            label: 'IIS',
+            url: `https://${httpServer}/code/folder.api/server/iis/`, // This URL must return an IIS server agent to work correctly
+            checks: {
+              folder: [hasDate, hasName, hasType],
+              file: [hasDate, hasSize, hasName],
+              validator: 'iis'
+            }
+          },
+
+          {
+            label: 'Apache - Basic Directory Listing',
+            url: `https://${httpServer}/code/folder.api/server/apache-std/`, // This URL must return an Apache server agent to work correctly
+            checks: {
+              folder: [hasName, hasType],
+              file: [hasName],
+              validator: 'apacheStd'
+            }
+          },
+          {
+            label: 'Apache - Fancy Directory Listing',
+            url: `https://${httpServer}/code/folder.api/server/apache-fancy/`, // This URL must return an Apache server agent to work correctly
+            checks: {
+              folder: [hasDate, hasSize, hasName, hasType],
+              file: [hasDate, hasSize, hasName],
+              validator: 'apacheFancy'
+            }
+          }
+        ];
+
+        const res = [];
+
+        for (let i = 0; i < urls.length; i++) {
+          const item = urls[i];
+          const url = item.url;
+          const label = item.label;
+
+          const response = await folderApiRequest(url);
+          const server = response.server;
+
+          res.push({ response, item });
+          const j = JSON.stringify(response, null, 2);
+
+          const pre = document.createElement('pre');
+          pre.textContent = j;
+          pre.setAttribute('label', label);
+          document.body.appendChild(pre);
+        }
+
+        const expectedCount = {
+          files: 4, folders: 3
+        }
+
+        res.forEach((res) => {
+          const response = res.response;
+          const files = response.files;
+          const folders = response.folders;
+          const result =
+            validate(res) &&
+            files.length === expectedCount.files &&
+            folders.length === expectedCount.folders;
+
+          const label = res.item.label;
+
+
+
+          const msg = `${label} validated: ${result}`;
+          console.info(msg);
+
+          if (!result) alert(msg);
+        });
+      }
+
+      function validate(res) {
+        const response = res.response;
+        const item = res.item;
+        const label = item.label
+        const checks = item.checks;
+
+        if (!checkItems(response.files, checks.file)) return false;
+        if (!checkItems(response.folders, checks.folder)) return false;
+        return true;
+      }
+
+      function checkItems(items, checks) {
+        try {
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const passed = checkItem(item, checks);
+
+            if (!passed) {
+              console.warn(item);
+              return false;
+            }
+          }
+
+          return true;
+        } catch (e) {
+          console.warn(e);
+          return false;
+        }
+      }
+
+      function checkItem(item, checkFns) {
+        for (let i = 0; i < checkFns.length; i++) {
+          const check = checkFns[i];
+
+          if (!check(item)) {
+            console.warn(check(item), check, item);
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      function hasDate(item) {
+        const res =
+          isParent(item) ||
+          isChild(item) ||
+          item.date && isDate(item.date);
+        return res;
+      }
+
+      function hasSize(item) {
+        const res =
+          isParent(item) ||
+          isChild(item) ||
+          typeof item.size === 'number'
+        return res;
+      }
+
+      function hasName(item) {
+        return typeof item.name === 'string';
+      }
+
+      function hasType(item) {
+        return typeof item.type === 'string';
+      }
+
+      function isParent(item) {
+        return item.type && item.type === 'parent';
+      }
+
+      function isChild(item) {
+        return item.type && item.type === 'child';
+      }
+
+      function isDate(d) {
+        return d instanceof Date;
+      }
+
+
+
+      main();
+    })();
+  </script>
+</body>
+
+</html>
