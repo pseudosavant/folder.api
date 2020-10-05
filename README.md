@@ -3,38 +3,40 @@
 
 ## Usage
 
-    const filesAndFolders = await folderApiRequest(url);
+```javascript
+const filesAndFolders = await folderApiRequest(url);
 
-    filesAndFolders; //{
-      "server": "nginx",
-      "folders": [
-        {
-          "url": "https://httphttp.local/code/folder.api/server/",
-          "name": "server",
-          "type": "parent"
-        },
-        {
-          "url": "https://http.local/code/folder.api/server/nginx/folder%201/",
-          "name": "folder%201",
-          "type": "child",
-          "date": "2020-10-06T13:59:00.000Z"
-        }
-      ],
-      "files": [
-        {
-          "url": "https://http.local/code/folder.api/server/nginx/Red.png",
-          "name": "Red.png",
-          "size": 150,
-          "date": "2000-10-10T20:07:00.000Z"
-        },
-        {
-          "url": "https://http.local/code/folder.api/server/nginx/long%20filename.jpg",
-          "name": "long%20filename.jpg",
-          "size": 931,
-          "date": "1999-01-01T17:02:00.000Z"
-        }
-      ]
+filesAndFolders; //{
+  "server": "nginx",
+  "folders": [
+    {
+      "url": "https://httphttp.local/code/folder.api/server/",
+      "name": "server",
+      "type": "parent"
+    },
+    {
+      "url": "https://http.local/code/folder.api/server/nginx/folder%201/",
+      "name": "folder%201",
+      "type": "child",
+      "date": "2020-10-06T13:59:00.000Z"
     }
+  ],
+  "files": [
+    {
+      "url": "https://http.local/code/folder.api/server/nginx/Red.png",
+      "name": "Red.png",
+      "size": 150,
+      "date": "2000-10-10T20:07:00.000Z"
+    },
+    {
+      "url": "https://http.local/code/folder.api/server/nginx/long%20filename.jpg",
+      "name": "long%20filename.jpg",
+      "size": 931,
+      "date": "1999-01-01T17:02:00.000Z"
+    }
+  ]
+}
+```
 
 ### Supported features
 
