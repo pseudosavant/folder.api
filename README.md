@@ -1,4 +1,4 @@
-# player.html
+# folder.api
 `folder.api` turns your HTTP server's file browsing into an API you can consume via JavaScript
 
 ## Usage
