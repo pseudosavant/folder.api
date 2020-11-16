@@ -69,7 +69,7 @@
 
   async function getServer(url) {
     const h = await getHeaderData(url);
-    const server = h.get('Server').toString().toLowerCase();
+    const server = (h.get('Server') ? h.get('Server').toString().toLowerCase() : undefined);
     if (server && server.includes) {
       if (server.includes('nginx')) {
         return 'nginx';
@@ -80,7 +80,7 @@
       }
     }
 
-    return;
+    return 'generic';
   }
 
   const servers = {
