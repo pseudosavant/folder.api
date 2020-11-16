@@ -1,4 +1,4 @@
-﻿// folder.api: version 1.0
+﻿// folder.api: version 1.0.1
 
 (function folderApiIIFE(global) {
   'use strict';
