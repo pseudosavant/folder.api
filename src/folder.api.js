@@ -265,6 +265,7 @@
   async function folderApiRequest(url) {
     const $frame = document.createElement('iframe');
     $frame.style.visibility = 'hidden';
+    document.body.appendChild($frame); // `<iframe>` must be appended before setting `src` or iOS calls load on `appendChild` as well
 
     const promise = new Promise((resolve, reject) => {
       $frame.addEventListener('error', reject, false);
@@ -277,7 +278,6 @@
       }, false);
     });
 
-    document.body.appendChild($frame);
     $frame.src = url; // Setting src starts loading
 
     return promise;
