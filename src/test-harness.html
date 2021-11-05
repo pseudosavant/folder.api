@@ -63,12 +63,12 @@
     (function harnessIIFE(){
       // main()
 
-      const httpServer = 'server.local';
+      const origin = 'https://pi4-server.local';
       async function main() {
         const urls = [
           {
             label: 'NGINX',
-            url: `https://${httpServer}/code/folder.api/server/nginx/`, // This URL must return an NGINX server agent to work correctly
+            url: `${origin}/code/folder.api/server/nginx/`, // This URL must return an NGINX server agent to work correctly
             checks: {
               folder: [hasDate, hasSize, hasName, hasType],
               file: [hasDate, hasSize, hasName],
@@ -77,7 +77,7 @@
           },
           {
             label: 'IIS',
-            url: `https://${httpServer}/code/folder.api/server/iis/`, // This URL must return an IIS server agent to work correctly
+            url: `${origin}/code/folder.api/server/iis/`, // This URL must return an IIS server agent to work correctly
             checks: {
               folder: [hasDate, hasName, hasType],
               file: [hasDate, hasSize, hasName],
@@ -87,7 +87,7 @@
 
           {
             label: 'Apache - Basic Directory Listing',
-            url: `https://${httpServer}/code/folder.api/server/apache-std/`, // This URL must return an Apache server agent to work correctly
+            url: `${origin}/code/folder.api/server/apache-std/`, // This URL must return an Apache server agent to work correctly
             checks: {
               folder: [hasName, hasType],
               file: [hasName],
@@ -96,7 +96,7 @@
           },
           {
             label: 'Apache - Fancy Directory Listing',
-            url: `https://${httpServer}/code/folder.api/server/apache-fancy/`, // This URL must return an Apache server agent to work correctly
+            url: `${origin}/code/folder.api/server/apache-fancy/`, // This URL must return an Apache server agent to work correctly
             checks: {
               folder: [hasDate, hasSize, hasName, hasType],
               file: [hasDate, hasSize, hasName],
