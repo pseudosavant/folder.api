@@ -1,4 +1,4 @@
-﻿// folder.api: version 1.0.2
+﻿// folder.api: version 1.0.3
 (function folderApiIIFE(global) {
   'use strict';
 
@@ -116,11 +116,11 @@
         const dateResults = dateRe.exec(dateNode.textContent);
 
         if (dateResults) {
-          const y = toInteger(dateResults[1]) || undefined;
-          const m = toInteger(dateResults[2]) || undefined;
-          const d = toInteger(dateResults[3]) || undefined;
-          const hours = toInteger(dateResults[4]) || undefined;
-          const mins = toInteger(dateResults[5]) || undefined;
+          const d =     (toInteger(dateResults[1]) >= 0 ? toInteger(dateResults[1]) : undefined);
+          const m =     (isString(dateResults[2])       ? dateResults[2] : undefined);
+          const y =     (toInteger(dateResults[3]) >= 0 ? toInteger(dateResults[3]) : undefined);
+          const hours = (toInteger(dateResults[4]) >= 0 ? toInteger(dateResults[4]) : undefined);
+          const mins =  (toInteger(dateResults[5]) >= 0 ? toInteger(dateResults[5]) : undefined);
           metadata.date = new Date(`${m}-${d}, ${y} ${hours}:${mins}:00`);
         }
       }
@@ -158,14 +158,14 @@
       const results = re.exec(text);
 
       if (!results) return metadata;
-      const d = toInteger(results[1]) || undefined;
-      const m = results[2] || undefined;
-      const y = toInteger(results[3]) || undefined;
-      const hours = toInteger(results[4]) || undefined;
-      const mins = toInteger(results[5]) || undefined;
+      const d =     (toInteger(results[1]) >= 0 ? toInteger(results[1]) : undefined);
+      const m =     (isString(results[2])       ? results[2] : undefined);
+      const y =     (toInteger(results[3]) >= 0 ? toInteger(results[3]) : undefined);
+      const hours = (toInteger(results[4]) >= 0 ? toInteger(results[4]) : undefined);
+      const mins =  (toInteger(results[5]) >= 0 ? toInteger(results[5]) : undefined);
       metadata.date = new Date(`${m}-${d}, ${y} ${hours}:${mins}:00`);
 
-      metadata.size = toInteger(results[6]) || undefined;
+      metadata.size = (isNumber(toInteger(results[6])) ? toInteger(results[6]) : undefined);
 
       return metadata;
     },
@@ -180,14 +180,14 @@
       const results = re.exec(text);
       if (!results) return metadata;
 
-      const m = toInteger(results[1]) || undefined;
-      const d = toInteger(results[2]) || undefined;
-      const y = toInteger(results[3]) || undefined;
-      const hours = toInteger(results[4]) || undefined;
-      const mins = toInteger(results[5]);
+      const d =     (toInteger(results[1]) >= 0 ? toInteger(results[1]) : undefined);
+      const m =     (isString(results[2])       ? results[2] : undefined);
+      const y =     (toInteger(results[3]) >= 0 ? toInteger(results[3]) : undefined);
+      const hours = (toInteger(results[4]) >= 0 ? toInteger(results[4]) : undefined);
+      const mins =  (toInteger(results[5]) >= 0 ? toInteger(results[5]) : undefined);
       metadata.date = new Date(`${m}-${d}, ${y} ${hours}:${mins}:00`);
 
-      metadata.size = toInteger(results[7]) || undefined;
+      metadata.size = (isNumber(toInteger(results[7])) ? toInteger(results[7]) : undefined);
 
       return metadata;
     },
@@ -227,14 +227,14 @@
       const results = re.exec(text);
 
       if (!results) return metadata;
-      const d = toInteger(results[1]) || undefined;
-      const m = results[2] || undefined;
-      const y = toInteger(results[3]) || undefined;
-      const hours = toInteger(results[4]) || undefined;
-      const mins = toInteger(results[5]) || undefined;
+      const d =     (toInteger(results[1]) >= 0 ? toInteger(results[1]) : undefined);
+      const m =     (isString(results[2])       ? results[2] : undefined);
+      const y =     (toInteger(results[3]) >= 0 ? toInteger(results[3]) : undefined);
+      const hours = (toInteger(results[4]) >= 0 ? toInteger(results[4]) : undefined);
+      const mins =  (toInteger(results[5]) >= 0 ? toInteger(results[5]) : undefined);
       metadata.date = new Date(`${m}-${d}, ${y} ${hours}:${mins}:00`);
 
-      metadata.size = toInteger(results[6]) || undefined;
+      metadata.size = (isNumber(toInteger(results[6])) ? toInteger(results[6]) : undefined);
 
       return metadata;
     },
@@ -343,7 +343,10 @@
 
   const toNumber = (d) => +d;
   const toInteger = (d) => parseInt(d, 10);
-  const isUndefined = (v) => typeof v === 'undefined';
+  const is = (type) => (v) => typeof v === type;
+  const isNumber = is('number');
+  const isString = is('string');
+  const isUndefined = is('undefined');
 
   global.folderApiRequest = folderApiRequest;
 })(this);
