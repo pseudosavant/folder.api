@@ -1,4 +1,4 @@
-﻿// folder.api: version 1.0.3
+﻿// folder.api: version 1.1.0
 (function folderApiIIFE(global) {
   'use strict';
 
@@ -240,6 +240,17 @@
     },
   }
 
+  const removeDuplicates = (items) => {
+    const o = {};
+
+    items.forEach((item) => {
+      const key = item.href;
+      o[key] = item;
+    });
+
+    return Object.values(o);
+  }
+
   const getLinksFromFrame = async (frame, baseUrl) => {
     const server = await getServer(baseUrl) || 'generic';
 
@@ -262,7 +273,7 @@
         break;
     }
 
-    const links = [...frame.contentDocument.querySelectorAll(query)];
+    const links = removeDuplicates([...frame.contentDocument.querySelectorAll(query)]);
     const folders = [];
     const files = [];
 

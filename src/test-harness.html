@@ -102,6 +102,15 @@
               file: [hasDate, hasSize, hasName],
               validator: 'apacheFancy'
             }
+          },
+          {
+            label: 'Glitch',
+            url: `${origin}/code/folder.api/server/glitch/`,
+            checks: {
+              folder: [none],
+              file: [none],
+              validator: 'glitch'
+            }
           }
         ];
 
@@ -138,9 +147,6 @@
             folders.length === expectedCount.folders;
 
           const label = res.item.label;
-
-
-
           const msg = `${label} validated: ${result}`;
           console.info(msg);
 
@@ -191,6 +197,8 @@
         return true;
       }
 
+      const none = () => true;
+
       function hasDate(item) {
         const res =
           isParent(item) ||
@@ -199,7 +207,7 @@
         return res;
       }
 
-      function hasSize(item) {
+      const hasSize = (item) => {
         const res =
           isParent(item) ||
           isChild(item) ||
@@ -207,27 +215,11 @@
         return res;
       }
 
-      function hasName(item) {
-        return typeof item.name === 'string';
-      }
-
-      function hasType(item) {
-        return typeof item.type === 'string';
-      }
-
-      function isParent(item) {
-        return item.type && item.type === 'parent';
-      }
-
-      function isChild(item) {
-        return item.type && item.type === 'child';
-      }
-
-      function isDate(d) {
-        return d instanceof Date;
-      }
-
-
+      const hasName = (item) => typeof item.name === 'string';
+      const hasType = (item) => typeof item.type === 'string';
+      const isParent = (item) => item.type && item.type === 'parent';
+      const isChild = (item) => item.type && item.type === 'child';
+      const isDate = (d) => d instanceof Date;
 
       main();
     })();
