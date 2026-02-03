@@ -1,1 +1,7 @@
+node_modules/
+coverage/
+*.log
+.servers/
+
 assets/Thumbs.db
+node_modules

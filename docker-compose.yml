@@ -1,0 +1,31 @@
+version: "3.9"
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: folderapi-caddy
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/srv/root:ro
+      - ./configs/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: folderapi-nginx
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    volumes:
+      - ./:/usr/share/nginx/html:ro
+      - ./configs/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+  apache:
+    image: httpd:2.4
+    container_name: folderapi-apache
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    volumes:
+      - ./:/usr/local/apache2/htdocs:ro
+      - ./configs/apache/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro
+
+# IIS is not included here (Windows-only). See README for manual steps.

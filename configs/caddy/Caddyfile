@@ -1,0 +1,11 @@
+{
+  auto_https off
+  admin off
+}
+
+:80 {
+  root * /srv/root
+  file_server browse
+  # Ensure consistent listing even if an index.html exists in some dirs
+  try_files {path} {path}/ /__no_index__
+}

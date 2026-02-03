@@ -1,0 +1,59 @@
+/*! folder-api browser bundle (single-file, no dependencies)
+ *  Features: fetch/iframe/auto, recursion, size/date parsing, MIME (HEAD), hidden detection.
+ *  Exposes global folderApiRequest and ESM export.
+ *  License: MIT
+ */
+ 'use strict';
+
+  // -------- Utilities --------
+  const ensureHttp = (url)=>{ const u=new URL(url); if(!/^https?:$/.test(u.protocol)) throw new Error('unsupported scheme'); u.pathname=u.pathname.replace(/\/+/g,'/'); if(!u.pathname.endsWith('/')) u.pathname+='/'; return u; };
+  const keyForVisited = (u)=> `${u.protocol}//${u.host.toLowerCase()}${u.pathname}`;
+  const parentDirectory = (u)=>{ const parts=u.pathname.split('/').filter(Boolean); if(!parts.length) return null; parts.pop(); return `${u.protocol}//${u.host}/${parts.join('/')}${parts.length?'/':''}`; };
+  const rootDirectory = (u)=> `${u.protocol}//${u.host}/`;
+  const hidden = (name)=> name.startsWith('.') && name!=='.' && name!=='..';
+  const safeDecode = (seg, errors)=>{ try{return decodeURIComponent(seg);}catch{ errors.push(`decode: failed to decode segment '${seg}'`); return seg; } };
+  const classify = (href, meta)=>{ if(href.endsWith('/')) return 'folder'; const last=href.split('/').filter(Boolean).pop()||''; if(/^[^.].*\.[^.]+$/.test(last)) return 'file'; if(/\b(dir|folder|directory)\b/i.test(meta)) return 'folder'; return 'file'; };
+  const monthIdx = m=>['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(m.toLowerCase());
+  function parseDate(text, errors){ let m=/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(text); if(m){return new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0))).toISOString();} m=/(\d{2})-(\w{3})-(\d{4})\s(\d{2}):(\d{2})/.exec(text); if(m){ const mi=monthIdx(m[2]); if(mi>-1) return new Date(Date.UTC(+m[3],mi,+m[1],+m[4],+m[5],0)).toISOString(); } m=/(\d{1,2})\/(\d{1,2})\/(\d{4})\s(\d{1,2}):(\d{2})(?:\s?(AM|PM))/i.exec(text); if(m){ let H=+m[4]; const ap=m[6]; if(ap){ if(/am/i.test(ap)){ if(H===12)H=0;} else if(/pm/i.test(ap)){ if(H!==12)H+=12; }} return new Date(Date.UTC(+m[3],+m[1]-1,+m[2],H,+m[5],0)).toISOString(); } if(/\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b/.test(text)) errors.push('date: ambiguous numeric date pattern'); return null; }
+  function parseSize(text){ const re=/(\d+(?:\.\d+)?)([KMGTP]?B?)/gi; const pow={ '':0,'B':0,'K':1,'KB':1,'M':2,'MB':2,'G':3,'GB':3,'T':4,'TB':4,'P':5,'PB':5 }; const tokens=[]; let m; while((m=re.exec(text))){ const raw=m[0]; const val=+m[1]; const unit=(m[2]||'').toUpperCase(); if(isNaN(val)||pow[unit]==null) continue; if(/^\d{4}$/.test(raw)){ const idx=m.index; const around=text.slice(Math.max(0,idx-5),Math.min(text.length,idx+6)); if(/[\d]{4}[-/]/.test(around)) continue; } const bytes = Math.floor(val*Math.pow(1024,pow[unit])); tokens.push({bytes,unit,raw,index:m.index}); } if(!tokens.length) return null; let withUnit=tokens.filter(t=>/[KMGTP]/.test(t.unit)); let cand=withUnit.length?withUnit:tokens.filter(t=>{ const before=text[t.index-1]||''; const after=text[t.index+t.raw.length]||''; if(': -'.includes(before)||': -'.includes(after)) return false; if(t.bytes<=60){ const slice=text.slice(Math.max(0,t.index-5),Math.min(text.length,t.index+8)); if(/\d{1,2}:\d{2}/.test(slice)) return false; } return true; }); if(!cand.length) cand=tokens; return cand.sort((a,b)=>b.bytes-a.bytes)[0].bytes; }
+  const pushError=(errs,prefix,msg)=>errs.push(`${prefix}: ${msg}`);
+
+  // -------- Fetch / Iframe loaders --------
+  async function fetchHtml(url, opts, stats){ const controller=new AbortController(); const t=setTimeout(()=>controller.abort(),opts.timeoutMs); if(opts.signal){ if(opts.signal.aborted) controller.abort(); const on=()=>controller.abort(); opts.signal.addEventListener('abort',on,{once:true}); }
+    try{ const res=await fetch(url,{redirect:'follow',signal:controller.signal}); stats.fetches++; if(res.status!==200) throw new Error('http '+res.status); const ct=res.headers.get('content-type')||''; if(!/text\/html/i.test(ct)) throw new Error('not html'); return await res.text(); } finally { clearTimeout(t);} }
+  async function iframeHtml(url, opts, stats){ if(typeof document==='undefined') throw new Error('no DOM'); const iframe=document.createElement('iframe'); iframe.setAttribute('sandbox','allow-same-origin'); Object.assign(iframe.style,{position:'absolute',width:'0',height:'0',border:'0',visibility:'hidden'}); document.body.appendChild(iframe); stats.iframes++; return await new Promise((resolve,reject)=>{ const to=setTimeout(()=>{ cleanup(); reject(new Error('timeout')); },opts.timeoutMs); function cleanup(){ clearTimeout(to); iframe.remove(); } iframe.onload=()=>{ try{ const html=iframe.contentDocument?.documentElement?.outerHTML||''; cleanup(); resolve(html);}catch(e){ cleanup(); reject(e);} }; iframe.onerror=()=>{ cleanup(); reject(new Error('iframe error')); }; iframe.src=url; }); }
+
+  // -------- Parsing directory listing --------
+  function parseDirectory(baseUrl, html, opts){ const errors=[]; const doc=new DOMParser().parseFromString(html,'text/html'); const anchors=[]; for(const sel of ['pre a[href]','table a[href]','ul a[href]','ol a[href]']) anchors.push(...doc.querySelectorAll(sel)); if(!anchors.length) anchors.push(...doc.querySelectorAll('a[href]'));
+    const seen=new Set(); const folders=[]; const files=[]; for(const a of anchors){ const hrefRaw=a.getAttribute('href'); if(!hrefRaw) continue; if(seen.has(hrefRaw)) continue; seen.add(hrefRaw); if(/^javascript:/i.test(hrefRaw)||/^mailto:/i.test(hrefRaw)||/#/.test(hrefRaw)) continue; const abs=new URL(hrefRaw,baseUrl); if(opts.sameOriginOnly && abs.origin!==new URL(baseUrl).origin) continue; const meta=deriveLineText(a); const kind=classify(abs.toString(),meta); const parts=abs.pathname.split('/').filter(Boolean); const segRaw=parts[parts.length-(abs.toString().endsWith('/')?1:1)]||''; const decoded=safeDecode(segRaw,errors); const isHidden=hidden(decoded); const date=parseDate(meta,errors); const size=parseSize(meta); if(kind==='folder'){ folders.push({ kind:'folder', url:abs.toString().endsWith('/')?abs.toString():abs.toString()+'/', rawName:segRaw, name:decoded, hidden:isHidden, size:null, date }); } else { files.push({ kind:'file', url:abs.toString(), rawName:segRaw, name:decoded, hidden:isHidden, size:size??null, date }); }
+    }
+    return { folders, files, errors }; }
+  function deriveLineText(a){ const tr=a.closest('tr'); if(tr) return tr.textContent||''; const li=a.closest('li'); if(li) return li.textContent||''; const pre=a.closest('pre'); if(pre){ const lines=pre.textContent.split(/\n/); const t=a.textContent?.trim(); const line=lines.find(l=>t&&l.includes(t)); return line||a.textContent||''; } return a.parentElement?.textContent||a.textContent||''; }
+
+  // -------- MIME enrichment --------
+  async function enrichMime(files, opts, stats, errors){ if(!opts.includeMime||!files.length) return; const limit=Math.max(1,opts.headConcurrency); let active=0; const queue=[]; const run=async(fn)=>{ if(active>=limit) return await new Promise(r=>queue.push(()=>r(run(fn)))); active++; try{ await fn(); } finally { active--; const n=queue.shift(); if(n) n(); } };
+    await Promise.all(files.map(f=>run(async()=>{ try{ const c=new AbortController(); const to=setTimeout(()=>c.abort(),opts.timeoutMs); const res=await fetch(f.url,{method:'HEAD',signal:c.signal}); stats.heads++; clearTimeout(to); if(res.ok){ if(!f.mime) f.mime=res.headers.get('content-type'); const len=res.headers.get('content-length'); if(len&&!f.size){ const n=+len; if(!isNaN(n)) f.size=n; } } else if(res.status===405||res.status===501){ pushError(errors,'mime','HEAD not supported'); } } catch{ pushError(errors,'mime',`failed HEAD for ${f.url}`); } })) ); }
+
+  // -------- Traversal --------
+  async function traverse(startUrl, opts, state){ const normalized=ensureHttp(startUrl).toString(); const u=new URL(normalized); const key=keyForVisited(u); if(state.visited.has(key)){ pushError(state.errors,'loop',`already visited ${normalized}`); return makeNode(normalized,u,0,'self'); } state.visited.add(key); const node=makeNode(normalized,u,0,'self'); state.allFolders.push(node); await loadDir(node,0); async function loadDir(cur,depth){ if(state.safety>50000){ pushError(state.errors,'limit','entry limit exceeded'); return; } let html=null; try{ if(opts.mode==='fetch'||opts.mode==='auto') html=await fetchHtml(cur.url,opts,state.stats); } catch(e){ if(opts.mode==='auto'){ html=await iframeHtml(cur.url,opts,state.stats); } else if(opts.mode==='iframe'){ html=await iframeHtml(cur.url,opts,state.stats); } else { throw e; } }
+      if(html==null) throw new Error('failed to load directory'); const parsed=parseDirectory(cur.url,html,opts); parsed.errors.forEach(e=>state.errors.push(e)); const curUrl=new URL(cur.url); const root=rootDirectory(curUrl); const parent=parentDirectory(curUrl);
+  for(const f of parsed.folders){ const fu=new URL(f.url); const depthFolder=folderDepth(curUrl,fu); const role= roleFor(f.url, normalized, root, parent); const fe={ kind:'folder', url:f.url, rawName:f.rawName, name:f.name, hidden:f.hidden, size:null, date:f.date, role, depth:depthFolder, children:[], files:[] }; if(role==='child') cur.children.push(fe); if(!state.allFolders.find(x=>x.url===fe.url && x.role===fe.role)) state.allFolders.push(fe); state.safety++; }
+      for(const fi of parsed.files){ const file={ kind:'file', url:fi.url, rawName:fi.rawName, name:fi.name, hidden:fi.hidden, size:fi.size, date:fi.date }; cur.files.push(file); state.allFiles.push(file); state.safety++; }
+      if(depth<opts.maxDepth){ for(const ch of cur.children){ const k=keyForVisited(new URL(ch.url)); if(state.visited.has(k)) continue; state.visited.add(k); await loadDir(ch,depth+1); } }
+      state.maxDepth=Math.max(state.maxDepth,depth); }
+    return node; }
+  function makeNode(url,u,depth,role){ const seg=u.pathname.split('/').filter(Boolean).pop()||''; return { kind:'folder', url, rawName:seg, name:seg, hidden:hidden(seg), size:null, date:null, role, depth, children:[], files:[] }; }
+  const folderDepth=(base,cand)=>{ const b=base.pathname.split('/').filter(Boolean); const c=cand.pathname.split('/').filter(Boolean); if(c.length<b.length) return 0; return c.length - b.length; };
+  const roleFor=(url,start,root,parent)=>{ if(url===start) return 'self'; if(url===root) return 'root'; if(parent && url===parent) return 'parent'; return 'child'; };
+
+  // -------- Option normalization --------
+  const norm=(o={})=>({ maxDepth: Math.max(0,o.maxDepth||0), mode: o.mode||'auto', includeMime: !!o.includeMime, headConcurrency: Math.max(1,o.headConcurrency||6), timeoutMs: Math.max(100,o.timeoutMs||15000), sameOriginOnly: o.sameOriginOnly!==false, signal: o.signal });
+
+  // -------- Public API --------
+  export async function folderApiRequest(url, options){ const opts=norm(options||{}); const start= (typeof performance!=='undefined'&&performance.now)? performance.now(): Date.now(); const state={ visited:new Set(), allFolders:[], allFiles:[], errors:[], stats:{fetches:0,iframes:0,heads:0}, safety:0, maxDepth:0 }; const root=await traverse(url, opts, state); if(opts.includeMime) await enrichMime(state.allFiles, opts, state.stats, state.errors); const duration=((typeof performance!=='undefined'&&performance.now)? performance.now(): Date.now())-start; const entries=[...state.allFolders, ...state.allFiles]; return { url: root.url, root, folders: state.allFolders, files: state.allFiles, entries, generatedAt: new Date().toISOString(), errors: state.errors, stats:{ fetches: state.stats.fetches, iframes: state.stats.iframes, heads: state.stats.heads, durationMs: duration, maxDepth: state.maxDepth } }; }
+
+  // Attach global for convenience in browsers when loaded via <script type="module">
+  if (typeof globalThis !== 'undefined' && !globalThis.folderApiRequest) {
+    globalThis.folderApiRequest = folderApiRequest;
+  }
+

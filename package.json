@@ -1,0 +1,37 @@
+{
+  "name": "folder-api",
+  "version": "2.0.0",
+  "description": "Generic HTTP directory listing parser with recursion, MIME enrichment, and iframe fallback.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./cdn": "./folder-api.cdn.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint 'src/**/*.{ts,tsx}'",
+    "prepare": "npm run build"
+  },
+  "keywords": ["directory", "listing", "folder", "http", "api", "parser"],
+  "author": "Paul Ellis",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^20.11.30",
+    "eslint": "^8.57.0",
+    "eslint-config-standard-with-typescript": "^43.0.1",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-promise": "^6.1.1",
+    "jsdom": "^24.0.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

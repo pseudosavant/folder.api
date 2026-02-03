@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>folder.api Test Harness</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+  :root { color-scheme: light dark; --bg:#121417; --fg:#e6e8ea; --accent:#3d89ff; --border:#2a2f35; --warn:#ffb347; --err:#ff5f56; font-family: system-ui, sans-serif; }
+  html, body { height:100%; min-height:0; }
+  body { margin:0; background:var(--bg); color:var(--fg); display:grid; grid-template-rows:auto 1fr; height:100dvh; min-height:0; }
+    header { padding:0.75rem 1rem; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:0.75rem; align-items:flex-end; }
+    fieldset { border:1px solid var(--border); padding:0.5rem 0.75rem 0.75rem; border-radius:6px; display:flex; flex-wrap:wrap; gap:0.6rem 0.9rem; align-items:flex-end; }
+    legend { font-size:0.8rem; letter-spacing:0.05em; text-transform:uppercase; opacity:0.7; }
+    label { font-size:0.75rem; display:flex; flex-direction:column; gap:0.25rem; font-weight:600; }
+    input[type=text], input[type=number], select { background:#1b1f24; color:var(--fg); border:1px solid var(--border); border-radius:4px; padding:0.4rem 0.55rem; min-width:6rem; font-size:0.8rem; }
+    input:focus, select:focus { outline:1px solid var(--accent); }
+    button { background:var(--accent); color:#fff; border:0; padding:0.55rem 0.9rem; border-radius:4px; cursor:pointer; font-weight:600; font-size:0.8rem; display:inline-flex; align-items:center; gap:0.35rem; }
+    button.secondary { background:#2d333a; }
+    button:disabled { opacity:0.55; cursor:not-allowed; }
+    main { display:grid; grid-template-columns: minmax(300px, 420px) 1fr; grid-template-rows:1fr; height:100%; min-height:0; overflow:hidden; }
+  aside { border-right:1px solid var(--border); padding:1rem; display:flex; flex-direction:column; gap:0.75rem; min-height:0; overflow:hidden; }
+    .panels { display:grid; grid-template-rows:1fr 1fr; gap:1px; background:var(--border); min-height:0; height:100%; overflow:hidden; }
+  .panel { background:#181c20; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+    .panel header { display:flex; align-items:center; justify-content:space-between; font-size:0.7rem; padding:0.35rem 0.6rem; background:#20252b; border-bottom:1px solid #1b1f24; flex-shrink:0; }
+  .panel pre { margin:0; padding:0.75rem; font-size:0.7rem; line-height:1.2; overflow:auto; flex:1; min-height:0; scrollbar-gutter:stable; }
+    #jsonOut, #entriesOut { display:block; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    .badge { display:inline-block; background:#2d333a; padding:0.12rem 0.45rem; border-radius:2rem; font-size:0.6rem; letter-spacing:0.05em; font-weight:600; }
+    .badge.err { background:var(--err); color:#fff; }
+    .badge.warn { background:var(--warn); color:#000; }
+    details { margin-top:0.75rem; }
+    summary { cursor:pointer; font-weight:600; }
+  .tree ul { list-style:none; margin:0; padding-left:1rem; }
+  #treeScroll { flex:1; min-height:0; overflow:auto; border:1px solid var(--border); border-radius:4px; padding:0.5rem; background:#181c20; }
+  #tree { min-width:0; }
+    .tree li { margin:0.2rem 0; }
+    .muted { opacity:0.6; }
+    .flex { display:flex; gap:0.5rem; flex-wrap:wrap; }
+    .grow { flex:1; }
+    @media (max-width: 1000px) { main { grid-template-columns: 1fr; grid-template-rows: 340px 1fr; } aside { border-right:0; border-bottom:1px solid var(--border); } }
+  </style>
+</head>
+<body>
+  <header>
+    <form id="form" class="flex" style="flex:1; align-items:flex-end; gap:0.75rem;">
+      <fieldset class="grow">
+        <legend>Target</legend>
+        <label style="flex:1; min-width:260px;">
+          URL
+          <input type="text" id="url" required />
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>Traversal</legend>
+        <label>
+          maxDepth
+          <input type="number" id="maxDepth" min="0" value="0" />
+        </label>
+        <label>
+          mode
+          <select id="mode">
+            <option value="auto" selected>auto</option>
+            <option value="fetch">fetch</option>
+            <option value="iframe">iframe</option>
+          </select>
+        </label>
+        <label>
+          headConcurrency
+          <input type="number" id="headConcurrency" min="1" value="4" />
+        </label>
+        <label>
+          timeoutMs
+          <input type="number" id="timeoutMs" min="100" value="15000" />
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>Flags</legend>
+        <label style="flex-direction:row; align-items:center; gap:0.4rem; font-weight:500;">
+          <input type="checkbox" id="includeMime" /> includeMime
+        </label>
+        <label style="flex-direction:row; align-items:center; gap:0.4rem; font-weight:500;">
+          <input type="checkbox" id="sameOriginOnly" checked /> sameOriginOnly
+        </label>
+      </fieldset>
+      <div style="display:flex; gap:0.5rem;">
+        <button id="run" type="submit">Run</button>
+        <button id="cancel" type="button" class="secondary" disabled>Cancel</button>
+      </div>
+    </form>
+    <div id="status" class="badge" style="align-self:flex-start;">idle</div>
+  </header>
+  <main>
+    <aside>
+      <h3 style="margin:0;">Tree</h3>
+      <div id="treeScroll"><div id="tree" class="tree" aria-live="polite"></div></div>
+      <details open style="flex-shrink:0;">
+        <summary>Stats & Errors</summary>
+        <div id="stats" style="font-size:0.7rem; line-height:1.3; margin-top:0.4rem;"></div>
+        <ul id="errors" style="padding-left:1rem; margin:0.5rem 0 0; font-size:0.7rem;"></ul>
+      </details>
+      <details style="flex-shrink:0;">
+        <summary>Options Snapshot</summary>
+        <pre id="optsSnapshot" style="background:#181c20; border:1px solid var(--border); border-radius:4px; padding:0.5rem;"></pre>
+      </details>
+    </aside>
+    <div class="panels">
+      <section class="panel">
+        <header>
+          <span>Result JSON</span>
+          <button type="button" id="copyJson" class="secondary" style="padding:0.25rem 0.5rem; font-size:0.65rem;">Copy</button>
+        </header>
+        <pre><code id="jsonOut" aria-live="polite"></code></pre>
+      </section>
+      <section class="panel">
+        <header><span>Flattened Entries</span></header>
+        <pre><code id="entriesOut"></code></pre>
+      </section>
+    </div>
+  </main>
+  <script type="module">
+    // Dynamic import of built library (ensure you ran `npm run build`)
+    import { folderApiRequest } from './dist/index.js';
+
+    const $ = (id) => document.getElementById(id);
+    const urlInput = $('url');
+    const maxDepth = $('maxDepth');
+    const mode = $('mode');
+    const includeMime = $('includeMime');
+    const headConcurrency = $('headConcurrency');
+    const timeoutMs = $('timeoutMs');
+    const sameOriginOnly = $('sameOriginOnly');
+    const form = $('form');
+    const runBtn = $('run');
+    const cancelBtn = $('cancel');
+    const status = $('status');
+    const jsonOut = $('jsonOut');
+    const entriesOut = $('entriesOut');
+    const tree = $('tree');
+    const errorsUl = $('errors');
+    const statsDiv = $('stats');
+    const optsSnapshot = $('optsSnapshot');
+    const copyBtn = $('copyJson');
+
+    const parentDir = new URL('./', location.href).toString(); // directory of harness
+    urlInput.value = parentDir;
+
+    let currentAbort = null;
+
+    function setStatus(text, cls='') {
+      status.textContent = text;
+      status.className = 'badge ' + cls;
+    }
+
+    function gatherOptions() {
+      return {
+        maxDepth: parseInt(maxDepth.value, 10) || 0,
+        mode: mode.value,
+        includeMime: includeMime.checked,
+        headConcurrency: parseInt(headConcurrency.value, 10) || 6,
+        timeoutMs: parseInt(timeoutMs.value, 10) || 15000,
+        sameOriginOnly: sameOriginOnly.checked
+      };
+    }
+
+    function renderTree(root) {
+      tree.innerHTML = '';
+      const ul = document.createElement('ul');
+      ul.appendChild(renderNode(root));
+      tree.appendChild(ul);
+    }
+
+    function renderNode(node) {
+      const li = document.createElement('li');
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = node.name + '/';
+      nameSpan.style.color = node.role === 'self' ? 'var(--accent)' : '#8fb4ff';
+  nameSpan.title = tooltipFor(node);
+      li.appendChild(nameSpan);
+      if (node.files?.length) {
+        const fList = document.createElement('ul');
+        for (const f of node.files) {
+          const fLi = document.createElement('li');
+            const fn = document.createElement('span');
+            fn.textContent = f.name;
+            if (f.hidden) fn.style.opacity = 0.6;
+    fn.title = tooltipFor(f);
+            fLi.appendChild(fn);
+            fList.appendChild(fLi);
+        }
+        li.appendChild(fList);
+      }
+      if (node.children?.length) {
+        const cList = document.createElement('ul');
+        for (const c of node.children) cList.appendChild(renderNode(c));
+        li.appendChild(cList);
+      }
+      return li;
+    }
+
+    function tooltipFor(entry) {
+      const preferredOrder = ['name','rawName','kind','role','depth','url','hidden','size','date','mime','children','files'];
+      const seen = new Set();
+      const lines = [];
+      function fmt(val) {
+        if (val == null) return 'null';
+        if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return String(val);
+        if (Array.isArray(val)) {
+          if (val.length === 0) return '[]';
+            // If array of entries with name property, show count + names
+          if (val.length <= 10 && val.every(v => v && typeof v === 'object' && 'name' in v)) {
+            return `[${val.length}] ` + val.map(v => v.name).join(', ');
+          }
+          return `[len=${val.length}]`;
+        }
+        try { return JSON.stringify(val); } catch { return '[object]'; }
+      }
+      for (const k of preferredOrder) {
+        if (k in entry) { lines.push(`${k}: ${fmt(entry[k])}`); seen.add(k); }
+      }
+      for (const k of Object.keys(entry)) {
+        if (!seen.has(k)) lines.push(`${k}: ${fmt(entry[k])}`);
+      }
+      return lines.join('\n');
+    }
+
+    async function run() {
+      const url = urlInput.value.trim();
+      if (!url) return;
+      const opts = gatherOptions();
+      optsSnapshot.textContent = JSON.stringify(opts, null, 2);
+  const startedWall = performance.now();
+      setStatus('loading', 'warn');
+      jsonOut.textContent = '';
+      entriesOut.textContent = '';
+      tree.textContent = '';
+      errorsUl.innerHTML = '';
+      statsDiv.textContent = '';
+      runBtn.disabled = true; cancelBtn.disabled = false;
+      const ac = new AbortController();
+      currentAbort = ac;
+      const timer = setTimeout(() => ac.abort(), opts.timeoutMs + 2500);
+      try {
+        const res = await folderApiRequest(url, { ...opts, signal: ac.signal });
+        setStatus('done');
+        jsonOut.textContent = JSON.stringify(res, null, 2);
+        entriesOut.textContent = res.entries.map(e => `${e.kind}\t${e.url}`).join('\n');
+        renderTree(res.root);
+        // errors
+        if (res.errors.length) {
+          for (const err of res.errors) {
+            const li = document.createElement('li');
+            li.textContent = err;
+            li.style.color = 'var(--err)';
+            errorsUl.appendChild(li);
+          }
+        }
+        const totalWall = performance.now() - startedWall;
+        statsDiv.innerHTML = [
+          `fetches: <strong>${res.stats.fetches}</strong>`,
+          `iframes: <strong>${res.stats.iframes}</strong>`,
+          `heads: <strong>${res.stats.heads}</strong>`,
+          `durationMs (internal): <strong>${Math.round(res.stats.durationMs)}</strong>`,
+          `totalMs (wall): <strong>${Math.round(totalWall)}</strong>`,
+          `maxDepth: <strong>${res.stats.maxDepth}</strong>`,
+          `files: <strong>${res.files.length}</strong>`,
+          `folders: <strong>${res.folders.length}</strong>`
+        ].join('<br/>');
+      } catch (e) {
+        if (ac.signal.aborted) setStatus('aborted', 'err'); else setStatus('error', 'err');
+        jsonOut.textContent = String(e);
+      } finally {
+        clearTimeout(timer);
+        runBtn.disabled = false; cancelBtn.disabled = true; currentAbort = null;
+      }
+    }
+
+    form.addEventListener('submit', (e) => { e.preventDefault(); run(); });
+    cancelBtn.addEventListener('click', () => { if (currentAbort) currentAbort.abort(); });
+    copyBtn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(jsonOut.textContent); copyBtn.textContent='Copied'; setTimeout(()=>copyBtn.textContent='Copy',1000);} catch { /* ignore */ }
+    });
+
+    // Allow quick-run with Enter in URL field
+    urlInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.metaKey) { e.preventDefault(); run(); } });
+
+    // Autofocus URL
+    urlInput.focus();
+
+    // Defensive layout fix (some browsers need an explicit recalculation for nested min-height:0)
+    function fixHeights(){
+      // force reflow and ensure panels have correct height
+      document.querySelectorAll('.panels, .panel').forEach(el=>{
+        el.style.minHeight='0';
+      });
+    }
+    window.addEventListener('resize', fixHeights);
+    requestAnimationFrame(fixHeights);
+  </script>
+</body>
+</html>
