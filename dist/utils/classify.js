@@ -1,9 +1,10 @@
 import { isHiddenName } from './url.js';
 export function classifyEntry(href, metadataText) {
-    if (href.endsWith('/'))
+    const pathname = typeof href === 'string' ? new URL(href).pathname : href.pathname;
+    if (pathname.endsWith('/'))
         return 'folder';
     // file if last segment contains a dot not at start/end
-    const last = href.split('/').filter(Boolean).pop() || '';
+    const last = pathname.split('/').filter(Boolean).pop() || '';
     if (/^[^.].*\.[^.]+$/.test(last))
         return 'file';
     // heuristic keywords for folders

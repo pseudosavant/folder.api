@@ -1,8 +1,10 @@
-import { FolderNode, FolderEntry, FileEntry, NormalizedOptions } from '../types.js';
+import { FolderNode, FolderEntry, FileEntry, NormalizedOptions, LoadedDirectory } from '../types.js';
 import { fetchDirectoryHtml } from './fetchDirectory.js';
 import { iframeDirectoryHtml } from './iframeDirectory.js';
 import { parseDirectoryHtml } from './parseDirectory.js';
-import { normalizeDirectoryUrl, keyForVisited, parentDirectory, rootDirectory } from '../utils/url.js';
+import { normalizeDirectoryUrl, keyForVisited, keyForFile, parentDirectory, rootDirectory } from '../utils/url.js';
+import { safeDecodeURIComponent } from '../utils/decode.js';
+import { throwIfAborted } from '../utils/abort.js';
 import { pushError } from '../utils/errors.js';
 
 interface RecursionState {
@@ -10,156 +12,193 @@ interface RecursionState {
   allFolders: FolderEntry[];
   allFiles: FileEntry[];
   errors: string[];
-  stats: { fetches: number; iframes: number; heads: number; };
+  stats: { fetches: number; iframes: number; heads: number };
   safetyCount: number;
   maxDepthEncountered: number;
 }
 
 export async function traverse(startUrl: string, opts: NormalizedOptions, state: RecursionState): Promise<FolderNode> {
-  const normalized = normalizeDirectoryUrl(startUrl);
-  const u = new URL(normalized);
-  const key = keyForVisited(u);
-  if (state.visited.has(key)) {
-    pushError(state.errors, 'loop', `already visited ${normalized}`);
-    return createEmptyNode(normalized, u, 0, 'self');
-  }
-  state.visited.add(key);
-  const rootDir = rootDirectory(u);
-  const parentDir = parentDirectory(u);
+  const root = createNode(normalizeDirectoryUrl(startUrl), 'self', 0, state.errors);
+  const folders = new Map<string, FolderNode>([[keyForVisited(new URL(root.url)), root]]);
+  const parents = new WeakMap<FolderNode, FolderNode>();
+  const files = new Map<string, FileEntry>();
+  let limitReported = false;
+  const entryCount = () => folders.size + files.size;
+  const reportLimit = () => {
+    if (!limitReported) pushError(state.errors, 'limit', 'entry limit exceeded');
+    limitReported = true;
+  };
+  const canAdd = () => {
+    if (entryCount() < opts.maxEntries) return true;
+    reportLimit();
+    return false;
+  };
 
-  const node: FolderNode = createEmptyNode(normalized, u, 0, 'self');
-  state.allFolders.push(node);
-
-  async function loadDirectory(current: FolderNode) {
-    if (state.safetyCount > 50000) {
-      pushError(state.errors, 'limit', 'entry limit exceeded');
-      return;
+  const loadDocument = async (url: string): Promise<LoadedDirectory> => {
+    throwIfAborted(opts.signal);
+    if (opts.mode === 'iframe') return await iframeDirectoryHtml(url, opts, state.stats);
+    if (opts.mode === 'fetch') return await fetchDirectoryHtml(url, opts, state.stats);
+    try {
+      return await fetchDirectoryHtml(url, opts, state.stats);
+    } catch {
+      throwIfAborted(opts.signal);
+      return await iframeDirectoryHtml(url, opts, state.stats);
     }
-    let html: string | null = null;
-    const mode = opts.mode;
-    if (mode === 'fetch') {
-      // fetch only
-      html = await fetchDirectoryHtml(current.url, opts, state.stats);
-    } else if (mode === 'iframe') {
-      // iframe only
-      html = await iframeDirectoryHtml(current.url, opts, state.stats);
-    } else { // auto
-      try {
-        html = await fetchDirectoryHtml(current.url, opts, state.stats);
-      } catch (e) {
-        // fallback to iframe
-        html = await iframeDirectoryHtml(current.url, opts, state.stats);
+  };
+
+  const loadDirectory = async (node: FolderNode, parent?: FolderNode): Promise<FolderNode | null> => {
+    const requestedKey = keyForVisited(new URL(node.url));
+    const loaded = await loadDocument(node.url);
+    throwIfAborted(opts.signal);
+    const url = normalizeDirectoryUrl(loaded.url);
+    const final = new URL(url);
+    if (node !== root && opts.sameOriginOnly && final.origin !== new URL(root.url).origin) {
+      throw new Error('Child directory redirected to another origin');
+    }
+    const finalKey = keyForVisited(final);
+    if (node !== root && opts.sameOriginOnly && !isChild(new URL(root.url), final) && !folders.has(finalKey)) {
+      throw new Error('Child directory redirected outside the starting directory');
+    }
+    if (finalKey !== requestedKey) {
+      const existing = folders.get(finalKey);
+      folders.delete(requestedKey);
+      if (existing && existing !== node) {
+        if (parent) parent.children = parent.children.filter(child => child !== node);
+        if (existing.role !== 'child' || state.visited.has(finalKey)) return null;
+        node = existing;
+      } else {
+        const updated = createNode(url, node.role, node.depth, state.errors);
+        Object.assign(node, updated);
+        folders.set(finalKey, node);
       }
     }
-    if (html == null) throw new Error('failed to load directory');
-    const parsed = parseDirectoryHtml(current.url, html, opts);
-    for (const e of parsed.errors) state.errors.push(e);
+    node.url = url;
+    if (node !== root && isChild(new URL(root.url), final)) node.depth = relativeDepth(new URL(root.url), final);
+    state.visited.add(finalKey);
+    if (node.depth > opts.maxDepth) return null;
+    state.maxDepthEncountered = Math.max(state.maxDepthEncountered, node.depth);
 
-    // Assign roles & depth for folders
-    const currentUrl = new URL(current.url);
-    for (const f of parsed.folders) {
-      const folderUrl = f.url;
-      const folderU = new URL(folderUrl);
-      const depth = depthFrom(currentUrl, folderU);
-      const role = determineRole(folderUrl, normalized, rootDir, parentDir);
-      const folderEntry: FolderEntry = {
-        kind: 'folder',
-        url: folderUrl,
-        rawName: f.rawName || folderUrl.split('/').filter(Boolean).pop() || '',
-        name: f.name || f.rawName || '',
-        hidden: f.hidden || false,
-        size: null,
-        date: f.date ?? null,
-        role,
-        depth,
+    const start = new URL(root.url);
+    const startKey = keyForVisited(start);
+    const rootKey = keyForVisited(new URL(rootDirectory(start)));
+    const parentUrl = parentDirectory(start);
+    const parentKey = parentUrl ? keyForVisited(new URL(parentUrl)) : null;
+    const folderRole = (candidate: URL): FolderEntry['role'] | undefined => {
+      const key = keyForVisited(candidate);
+      if (key === startKey) return 'self';
+      if (key === rootKey) return 'root';
+      if (key === parentKey) return 'parent';
+      if (isChild(final, candidate) || (!opts.sameOriginOnly && candidate.origin !== final.origin)) return 'child';
+      return undefined;
+    };
+    let pendingEntries = 0;
+    const parsed = parseDirectoryHtml(url, loaded.html, opts, (kind, candidate) => {
+      if (kind === 'folder') {
+        if (!folderRole(candidate)) return 'skip';
+        if (folders.has(keyForVisited(candidate))) return 'accept';
+      } else if (files.has(keyForFile(candidate))) return 'skip';
+      if (entryCount() + pendingEntries >= opts.maxEntries) return 'limit';
+      pendingEntries++;
+      return 'accept';
+    });
+    for (const error of parsed.errors) {
+      if (error.startsWith('limit:')) reportLimit();
+      else state.errors.push(error);
+    }
+
+    for (const folder of parsed.folders) {
+      throwIfAborted(opts.signal);
+      const candidate = new URL(folder.url);
+      const key = keyForVisited(candidate);
+      const role = folderRole(candidate);
+      if (!role) continue;
+
+      let child = folders.get(key);
+      if (!child) {
+        if (!canAdd()) break;
+        const depth = role === 'child' ? node.depth + relativeDepth(final, candidate) : 0;
+        child = { ...createNode(folder.url, role, depth, state.errors), date: folder.date ?? null };
+        folders.set(key, child);
+      }
+      if (role === 'child' && !parents.has(child) && !state.visited.has(key)) {
+        parents.set(child, node);
+        node.children.push(child);
+      }
+    }
+    for (const file of parsed.files) {
+      throwIfAborted(opts.signal);
+      const key = keyForFile(new URL(file.url));
+      if (files.has(key)) continue;
+      if (!canAdd()) break;
+      const entry: FileEntry = {
+        kind: 'file', url: file.url, name: file.name || '', rawName: file.rawName || '',
+        hidden: file.hidden || false, size: file.size ?? null, date: file.date ?? null
       };
-      if (!state.allFolders.find(x => x.url === folderEntry.url && x.role === folderEntry.role)) {
-        state.allFolders.push(folderEntry);
-      }
-      if (role === 'child') {
-        const childNode: FolderNode = { ...folderEntry, children: [], files: [] };
-        current.children.push(childNode);
-      }
-  state.safetyCount++;
+      files.set(key, entry);
+      node.files.push(entry);
     }
-    for (const fi of parsed.files) {
-      const fileEntry: FileEntry = {
-        kind: 'file',
-        url: fi.url,
-        rawName: fi.rawName || fi.url.split('/').filter(Boolean).pop() || '',
-        name: fi.name || fi.rawName || '',
-        hidden: fi.hidden || false,
-        size: fi.size ?? null,
-        date: fi.date ?? null,
-      };
-      state.allFiles.push(fileEntry);
-      current.files.push(fileEntry);
-      state.safetyCount++;
-    }
+    return node;
+  };
 
-    // Ensure parent & root entries exist (not traversed) even if absent in listing
-    if (current.role === 'self') {
-      if (rootDir && !state.allFolders.find(f => f.url === rootDir)) {
-        const rootNode = createEmptyNode(rootDir, new URL(rootDir), 0, 'root');
-        state.allFolders.push(rootNode);
-        state.safetyCount++;
-      }
-      if (parentDir && !state.allFolders.find(f => f.url === parentDir)) {
-        const parentNode = createEmptyNode(parentDir, new URL(parentDir), 0, 'parent');
-        state.allFolders.push(parentNode);
-        state.safetyCount++;
-      }
-    }
+  state.visited.add(keyForVisited(new URL(root.url)));
+  await loadDirectory(root);
+  for (const [url, role] of [[rootDirectory(new URL(root.url)), 'root'], [parentDirectory(new URL(root.url)), 'parent']] as const) {
+    if (!url || folders.has(keyForVisited(new URL(url)))) continue;
+    if (!canAdd()) break;
+    folders.set(keyForVisited(new URL(url)), createNode(url, role, 0, state.errors));
   }
 
-  await loadDirectory(node);
-
-  async function dfs(current: FolderNode, currentDepth: number) {
-    state.maxDepthEncountered = Math.max(state.maxDepthEncountered, currentDepth);
-    if (currentDepth >= opts.maxDepth) return; // stop
-    for (const child of current.children) {
-      // role child ensures depth computation
-      if (child.role !== 'child') continue;
-      const childU = new URL(child.url);
-      const childKey = keyForVisited(childU);
-      if (state.visited.has(childKey)) continue;
-      state.visited.add(childKey);
-      await loadDirectory(child);
-      await dfs(child, currentDepth + 1);
+  // Use an explicit depth-first stack so a deep tree does not retain recursive calls.
+  const pending: Array<{ node: FolderNode; parent: FolderNode }> = [];
+  const enqueue = (parent: FolderNode) => {
+    for (let index = parent.children.length - 1; index >= 0; index--) {
+      const node = parent.children[index];
+      if (node.depth <= opts.maxDepth) pending.push({ node, parent });
+    }
+  };
+  enqueue(root);
+  while (pending.length > 0) {
+    throwIfAborted(opts.signal);
+    if (entryCount() >= opts.maxEntries) {
+      reportLimit();
+      break;
+    }
+    const next = pending.pop()!;
+    const key = keyForVisited(new URL(next.node.url));
+    if (state.visited.has(key)) continue;
+    state.visited.add(key);
+    try {
+      const loaded = await loadDirectory(next.node, next.parent);
+      if (loaded) enqueue(loaded);
+    } catch (error) {
+      throwIfAborted(opts.signal);
+      if (!opts.continueOnError) throw error;
+      pushError(state.errors, 'traversal', `failed to load ${next.node.url}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-
-  await dfs(node, 0);
-  return node;
+  for (const folder of folders.values()) state.allFolders.push(folder);
+  for (const file of files.values()) state.allFiles.push(file);
+  state.safetyCount = entryCount();
+  return root;
 }
 
-function createEmptyNode(url: string, u: URL, depth: number, role: 'self'|'child'|'root'|'parent'): FolderNode {
-  const seg = u.pathname.split('/').filter(Boolean).pop() || '';
+function createNode(url: string, role: FolderEntry['role'], depth: number, errors: string[]): FolderNode {
+  const rawName = new URL(url).pathname.split('/').filter(Boolean).pop() || '';
+  const name = safeDecodeURIComponent(rawName, errors);
   return {
-    kind: 'folder',
-    url,
-    rawName: seg,
-    name: seg,
-    hidden: seg.startsWith('.') && seg !== '.' && seg !== '..',
-    size: null,
-    date: null,
-    role,
-    depth,
-    children: [],
-    files: []
+    kind: 'folder', url, rawName, name, hidden: name.startsWith('.') && name !== '.' && name !== '..',
+    size: null, date: null, role, depth, children: [], files: []
   };
 }
 
-function depthFrom(base: URL, candidate: URL): number {
-  const bParts = base.pathname.split('/').filter(Boolean);
-  const cParts = candidate.pathname.split('/').filter(Boolean);
-  if (cParts.length < bParts.length) return 0; // parent or root
-  return cParts.length - bParts.length;
+function isChild(base: URL, candidate: URL): boolean {
+  const parent = keyForVisited(base);
+  const child = keyForVisited(candidate);
+  return candidate.origin === base.origin && child.startsWith(parent) && child !== parent;
 }
 
-function determineRole(url: string, start: string, root: string, parent: string | null): 'root' | 'self' | 'parent' | 'child' {
-  if (url === start) return 'self';
-  if (url === root) return 'root';
-  if (parent && url === parent) return 'parent';
-  return 'child';
+function relativeDepth(base: URL, candidate: URL): number {
+  return isChild(base, candidate)
+    ? candidate.pathname.split('/').filter(Boolean).length - base.pathname.split('/').filter(Boolean).length
+    : 1;
 }

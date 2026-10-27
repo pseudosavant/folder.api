@@ -8,7 +8,7 @@ vi.mock('../../src/core/fetchDirectory.ts', () => ({
 vi.mock('../../src/core/iframeDirectory.ts', () => ({
   iframeDirectoryHtml: async (_url: string, _opts: any, stats: any) => {
     if (stats) stats.iframes++;
-    return '<html><body><pre><a href="file.txt">file.txt</a> 2024-03-01 12:00 1K</pre></body></html>';
+    return { html: '<html><body><pre><a href="file.txt">file.txt</a> 2024-03-01 12:00 1K</pre></body></html>', url: _url };
   }
 }));
 

@@ -2,7 +2,10 @@ export type EntryKind = 'file' | 'folder';
 export type FolderRole = 'root' | 'self' | 'parent' | 'child';
 export interface FolderApiOptions {
     maxDepth?: number;
+    maxEntries?: number;
+    continueOnError?: boolean;
     mode?: 'fetch' | 'iframe' | 'auto';
+    cache?: RequestCache;
     includeMime?: boolean;
     headConcurrency?: number;
     timeoutMs?: number;
@@ -58,10 +61,17 @@ export interface InternalDirectoryParse {
 }
 export interface NormalizedOptions {
     maxDepth: number;
+    maxEntries: number;
+    continueOnError: boolean;
     mode: 'fetch' | 'iframe' | 'auto';
+    cache: RequestCache;
     includeMime: boolean;
     headConcurrency: number;
     timeoutMs: number;
     sameOriginOnly: boolean;
     signal?: AbortSignal;
+}
+export interface LoadedDirectory {
+    html: string;
+    url: string;
 }

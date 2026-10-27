@@ -1,12 +1,21 @@
 import { FolderApiOptions, NormalizedOptions } from './types.js';
 
+const integerOption = (value: number | undefined, fallback: number, minimum: number, maximum = Number.MAX_SAFE_INTEGER): number =>
+  typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(maximum, Math.max(minimum, Math.trunc(value)))
+    : fallback;
+
 export function normalizeOptions(opts: FolderApiOptions | undefined): NormalizedOptions {
+  const cache = opts?.cache ?? 'default';
   return {
-    maxDepth: Math.max(0, opts?.maxDepth ?? 0),
-    mode: opts?.mode ?? 'auto',
+    maxDepth: integerOption(opts?.maxDepth, 0, 0),
+    maxEntries: integerOption(opts?.maxEntries, 50000, 1, 50000),
+    continueOnError: opts?.continueOnError === true,
+    mode: opts?.mode === 'fetch' || opts?.mode === 'iframe' ? opts.mode : 'auto',
+    cache: ['default', 'no-store', 'no-cache', 'reload', 'force-cache', 'only-if-cached'].includes(cache) ? cache : 'default',
     includeMime: opts?.includeMime ?? false,
-  headConcurrency: Math.max(1, opts?.headConcurrency ?? 4),
-    timeoutMs: Math.max(100, opts?.timeoutMs ?? 15000),
+    headConcurrency: integerOption(opts?.headConcurrency, 4, 1),
+    timeoutMs: integerOption(opts?.timeoutMs, 15000, 100, 2147483647),
     sameOriginOnly: opts?.sameOriginOnly ?? true,
     signal: opts?.signal
   };

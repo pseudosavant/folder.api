@@ -11,6 +11,7 @@ export function ensureHttp(url: string): URL {
   // normalize duplicate slashes in pathname
   u.pathname = u.pathname.replace(/\/+/g, '/');
   if (!u.pathname.endsWith('/')) u.pathname += '/';
+  u.hash = '';
   return u;
 }
 
@@ -19,7 +20,18 @@ export function normalizeDirectoryUrl(url: string): string {
 }
 
 export function keyForVisited(u: URL): string {
-  return `${u.protocol}//${u.host.toLowerCase()}${u.pathname}`;
+  return `${u.origin}${canonicalPath(u.pathname)}`;
+}
+
+export function keyForFile(u: URL): string {
+  return keyForVisited(u) + u.search;
+}
+
+function canonicalPath(pathname: string): string {
+  return pathname.replace(/%[\da-f]{2}/gi, encoded => {
+    const decoded = String.fromCharCode(parseInt(encoded.slice(1), 16));
+    return /^[\w.~-]$/.test(decoded) ? decoded : encoded.toUpperCase();
+  });
 }
 
 export function isSameOrigin(a: URL, b: URL): boolean {

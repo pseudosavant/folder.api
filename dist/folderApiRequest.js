@@ -1,8 +1,10 @@
 import { normalizeOptions } from './options.js';
 import { traverse } from './core/recursion.js';
 import { enrichMime } from './core/mime.js';
+import { throwIfAborted } from './utils/abort.js';
 export async function folderApiRequest(url, options) {
     const opts = normalizeOptions(options);
+    throwIfAborted(opts.signal);
     const started = performance.now?.() ?? Date.now();
     const state = {
         visited: new Set(),

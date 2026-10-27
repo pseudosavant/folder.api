@@ -1,17 +1,14 @@
-import { NormalizedOptions } from '../types.js';
+import { LoadedDirectory, NormalizedOptions } from '../types.js';
+import { createRequestController, throwIfAborted } from '../utils/abort.js';
 
-export async function fetchDirectoryHtml(url: string, opts: NormalizedOptions, stats: { fetches: number }): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
-  if (opts.signal) {
-    const onAbort = () => controller.abort();
-    if (opts.signal.aborted) controller.abort();
-    opts.signal.addEventListener('abort', onAbort, { once: true });
-  }
+export async function fetchDirectoryHtml(url: string, opts: NormalizedOptions, stats: { fetches: number }): Promise<LoadedDirectory> {
+  const request = createRequestController(opts.signal, opts.timeoutMs);
   try {
     const res = await fetch(url, {
       redirect: 'follow',
-      signal: controller.signal,
+      cache: opts.cache,
+      mode: opts.cache === 'only-if-cached' ? 'same-origin' : undefined,
+      signal: request.signal,
       headers: {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
       }
@@ -20,8 +17,10 @@ export async function fetchDirectoryHtml(url: string, opts: NormalizedOptions, s
     if (res.status !== 200) throw new Error(`http ${res.status}${res.statusText ? ' ' + res.statusText : ''}`);
     const ctype = res.headers.get('content-type') || '';
     if (!/text\/html/i.test(ctype)) throw new Error(`not html content-type: ${ctype}`);
-    return await res.text();
+    const html = await res.text();
+    throwIfAborted(opts.signal);
+    return { html, url: res.url || url };
   } finally {
-    clearTimeout(timer);
+    request.dispose();
   }
 }

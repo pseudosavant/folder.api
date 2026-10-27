@@ -1,8 +1,23 @@
-## folder.api (v2, TypeScript / ESM, browser-only)
+## folder.api (v2.1.0, TypeScript / ESM, browser-only)
 
 `folder.api` turns your HTTP server's directory listings into a structured JavaScript API for the browser.
 
 Generic, server-agnostic parsing with recursion, iframe fallback, and optional parallel MIME enrichment.
+
+### 2.1.0
+* Parse metadata separately from filenames. Missing sizes and dates remain `null` instead of being inferred from filename digits or neighboring rows.
+* Support comma-separated byte counts, spaced size units, and IIS metadata before links. The TypeScript API and standalone browser bundle share regression fixtures.
+* Add the optional `cache` policy for directory fetches. Use `cache: 'no-store'` when directory contents must be read from the server.
+* Generate the standalone browser bundle from the TypeScript implementation. Both entry points now share behavior, defaults, and regression tests.
+* Fix iframe-only mode, cancellation, redirect resolution, public package typings, URL deduplication, and folder roles and depths.
+* Read table metadata by column. Apache descriptions and Deno permissions no longer hide valid sizes. Dates support explicit timezone offsets and irregular IIS whitespace, and invalid dates remain unknown.
+* Enforce the 50,000-entry ceiling within listings. Use `maxEntries` to set a smaller budget.
+* Use constant-time entry lookups and bounded HEAD workers. Abort listeners and request timers are cleaned up after success or failure.
+* Add opt-in `continueOnError` traversal to retain readable results when a child directory fails.
+* Recheck root-relative depth after child redirects. Contents beyond `maxDepth` are not expanded.
+* Apply entry budgets after traversal scope checks and global deduplication. Discarded folders and previously returned files do not hide later valid entries.
+* Honor the first HTML `base[href]` against the final document URL without relaxing origin or traversal restrictions. Support column spans in table headers and data rows.
+* Keep malformed timestamp suffixes unknown instead of accepting a valid-looking prefix.
 
 ---
 ### Install (Pure ESM)
@@ -55,7 +70,7 @@ console.log('files', res.files.length, 'folders', res.folders.length);
 * Size parsing with unit heuristics (K, M, G) & ambiguity guards
 * Hidden detection (`.dotfile` excluding `.` / `..`)
 * Hierarchical tree + flattened arrays
-* Abortable via `AbortSignal`; per-directory timeout
+* Abortable via `AbortSignal`, with per-request timeouts
 * Safety limit (50k entries) to prevent runaway traversal
 
 ### Supported / Tested Server Styles
@@ -72,16 +87,22 @@ Key option defaults:
 | Option | Default | Notes |
 |--------|---------|-------|
 | `maxDepth` | 0 | Depth of child folders to traverse (0 = just start directory) |
-| `mode` | `auto` | `fetch` | `iframe` | `auto` (fallback) |
+| `maxEntries` | 50000 | Total unique files and folders, including the starting folder and navigation entries. May be lowered, but not raised above 50000. |
+| `continueOnError` | false | Keep readable results after child-directory failures and record `traversal:` warnings. Root failures and cancellation still reject. |
+| `mode` | `auto` | Choose `fetch`, `iframe`, or `auto` (fallback). |
+| `cache` | `default` | Fetch cache policy for directory HTML. `no-store` bypasses the HTTP cache. `only-if-cached` uses same-origin mode. |
 | `includeMime` | false | Enables HEAD enrichment |
 | `headConcurrency` | 4 | Parallel HEAD limit (>=1) |
 | `timeoutMs` | 15000 | Per directory (fetch / iframe / HEAD) |
-| `sameOriginOnly` | true | Caller ensures origin policy; iframe fallback relies on same-origin |
+| `sameOriginOnly` | true | Filter listing links to the directory's origin. Child redirects cannot escape the starting subtree. This does not bypass browser CORS or iframe restrictions. |
+| `signal` | none | Cancel active work and prevent queued requests from starting. |
+
+Numeric options use finite integers. Fractional values are truncated. Non-finite or nonnumeric values use defaults. `headConcurrency` has a minimum of 1 and `timeoutMs` is clamped between 100 and 2147483647 milliseconds.
 
 Returned `FolderApiResult` fields (simplified):
 | Field | Description |
 |-------|-------------|
-| `url` | Normalized starting directory URL |
+| `url` | Final normalized starting directory URL after redirects |
 | `root` | Root `FolderNode` (tree) |
 | `folders` / `files` | Flat arrays of entries (v1-style names) |
 | `entries` | Concatenated array of folders + files |
@@ -92,17 +113,31 @@ Returned `FolderApiResult` fields (simplified):
 ### Modes Explained
 * `fetch` – Direct HTTP GET; fastest when CORS allows.
 * `iframe` – Browser-only sandboxed load (`allow-same-origin`) used when fetch blocked.
-* `auto` – Attempt fetch; on failure (network, non-200) retry via iframe.
+* `auto` attempts fetch and falls back to an iframe after a network or HTTP failure. Caller cancellation never starts a fallback.
+
+Iframe reading requires same-origin access to the loaded document. It cannot bypass CORS by reading a cross-origin frame. The `cache` option controls fetch requests only, not iframe navigation. Iframes also cannot expose HTTP response status to this parser.
+
+Relative entries are resolved against the final loaded directory URL, or the first HTML `base[href]` resolved against that URL. Invalid or non-HTTP base values produce `url:` warnings and fall back to the document URL. Later base elements are ignored. Origin filtering still uses the loaded document's origin. A base element cannot expand the allowed traversal scope. Folder URLs keep a trailing pathname slash even when they have query parameters. Sorting controls and fragment links are excluded. Malformed links produce `url:` warnings without losing valid entries.
+
+Flat entry arrays deduplicate normalized URLs. Folder roles are relative to the final starting directory, with one entry per folder. `self` is the starting folder. `root` is its origin root and `parent` is its immediate parent, unless those are the same URL. `root` takes precedence in that case. Child depths are root-relative. Ancestors and unrelated same-origin folders are not recursively traversed. Directory GETs remain sequential and depth-first.
+
+The entry budget limits returned unique entries and stops further directory traversal. Scope checks and global deduplication happen before admission to the budget. Unrelated folders and already returned files do not consume it. HTML still has to be downloaded and parsed, so this is not a response-byte limit.
+
+Child redirects are checked against `maxDepth` again after their final URL is known. A target beyond that depth remains listed as a folder but its contents are not parsed or enriched. The redirect response may already have been downloaded. `stats.maxDepth` measures directories whose contents were parsed, not the deepest folder link discovered.
 
 ### MIME / Size Enrichment
+File sizes and dates are read from metadata fields, not link text. Table column spans are included when aligning size and date headers with row cells. Unknown or ambiguous values remain `null`. Malformed times and timezone suffixes are not silently truncated to a valid prefix. Normal metadata parsing does not add HTTP requests.
+
 Enable with `includeMime: true`. Each file may gain:
 * `mime`: from `Content-Type`
 * `size`: filled / overridden from `Content-Length` when missing
-Concurrency controlled by `headConcurrency` (default 4).
+Concurrency is controlled by `headConcurrency` (default 4). A bounded worker pool avoids allocating one pending promise per file. Existing sizes, including zero, are preserved. Only valid nonnegative integer `Content-Length` values fill missing sizes. Caller cancellation stops active and queued HEAD work.
 
 ### Error Categories
 Prefixes help classify issues (non-fatal):
-`date:` `size:` `mime:` `decode:` `loop:` `limit:`
+`date:` `size:` `mime:` `decode:` `loop:` `limit:` `url:` `traversal:`
+
+Traversal is fail-fast by default. With `continueOnError: true`, a failed child remains listed, later children are still visited, and a `traversal:` warning identifies the failed URL. Failure to load the starting directory always rejects. Cancellation rejects with the caller's abort reason, or an `AbortError` when no reason is available.
 
 ### Upgrade Notes (v1 → v2)
 * Pure ESM (no CJS wrapper).
@@ -123,11 +158,29 @@ await folderApiRequest('https://example.com/public/', { signal: ac.signal });
 ```
 
 ### Development / Testing
+Development requires Node.js 20 or newer. Install development dependencies and a test browser once:
+```
+npm ci
+npx playwright install chromium
+```
+
+Then run:
 ```
 npm test
 npm run build
+npm run lint
 ```
 Mock server fixtures (FastAPI) in `mock_servers/` provide Apache/Nginx/IIS/Caddy headers and listing layouts.
+
+`npm run build` compiles the ESM files and declarations under `dist/`, then bundles `src/browser.ts` into `folder-api.cdn.js` using esbuild. The bundle still exports `folderApiRequest` and attaches it to `globalThis` when no existing implementation is present. Do not hand-edit the generated bundle. There are no runtime dependencies.
+
+`npm test` builds first so bundle parity tests never use an old copy. It runs unit, integration, package-consumer, and real-browser tests. Tests cover both implementations, captured server listings, body-reading cancellation, HEAD and iframe timeout cleanup, custom abort reasons, limits, metadata, base URLs, redirects, traversal, concurrency, reproducible bundling, and public TypeScript imports. Seeded randomized listings also check uniqueness, tree structure, depths, and entry budgets.
+
+Package tests create a tarball in a temporary directory and install it offline into a clean consumer. Both public entry points are imported and type-checked without access to checkout sources or development dependencies. Temporary artifacts are removed afterward.
+
+Browser tests use Playwright with a temporary loopback HTTP server. They exercise real sandboxed iframes, fetch and iframe redirects, base elements, active cancellation, and streaming response-body timeouts. They do not need an external server. `npm run test:browser` builds and runs only these checks. To use an installed Chrome instead of Playwright's downloaded Chromium, set `FOLDER_API_BROWSER_CHANNEL=chrome` before running tests. Browser setup failures fail the suite rather than silently skipping coverage.
+
+Before publishing, run the build, tests, and lint checks and inspect `npm pack --dry-run`. The package allowlist includes only the runtime distributions, README, and license.
 
 ### Mock Test Servers
 The project includes lightweight FastAPI apps that emulate Apache, Nginx, IIS, and Caddy directory listings (HTML structure + `Server` header). They are not literal daemons but are structurally similar outputs for parser robustness.
@@ -171,7 +224,7 @@ console.log(res.stats, res.files.map(f=>f.name));
 
 Why not real daemons? Spinning up actual Apache/Nginx/IIS/Caddy for CI is heavy; HTML structural diversity is what the parser needs. If you contribute new heuristics, add another layout variant here.
 
-Note: Built-in Python `http.server` isn't used because its listing format overlaps existing variants; add it if a distinct edge case emerges.
+Python `http.server` listings are covered by parser fixtures. These listings usually provide filenames without sizes or dates, so those values remain `null`.
 
 ### Contributing
 Please add / update tests for any behavioral change. Keep patches minimal; avoid adding heavy dependencies.

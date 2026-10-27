@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeDirectoryUrl, parentDirectory, rootDirectory, isSameOrigin } from '../../src/utils/url.js';
+import { normalizeDirectoryUrl, parentDirectory, rootDirectory, isSameOrigin, keyForFile, keyForVisited } from '../../src/utils/url.js';
 
 describe('url utils', () => {
   it('normalizes trailing slash', () => {
@@ -15,6 +15,12 @@ describe('url utils', () => {
   });
   it('isSameOrigin', () => {
     expect(isSameOrigin(new URL('https://a.com/x/'), new URL('https://a.com/y/'))).toBe(true);
+  });
+  it('deduplicates unreserved encoding aliases without decoding encoded path separators', () => {
+    expect(keyForVisited(new URL('https://x.test/f%6Flder/'))).toBe(keyForVisited(new URL('https://x.test/folder/')));
+    expect(keyForVisited(new URL('https://x.test/a%2fb/'))).not.toBe(keyForVisited(new URL('https://x.test/a/b/')));
+    expect(keyForFile(new URL('https://x.test/a.mp4?token=one'))).not.toBe(keyForFile(new URL('https://x.test/a.mp4?token=two')));
+    expect(normalizeDirectoryUrl('https://x.test/folder?token=one#anchor')).toBe('https://x.test/folder/?token=one');
   });
 });
 

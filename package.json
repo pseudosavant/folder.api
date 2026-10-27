@@ -1,21 +1,28 @@
 {
   "name": "folder-api",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Generic HTTP directory listing parser with recursion, MIME enrichment, and iframe fallback.",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/types.d.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./cdn": "./folder-api.cdn.js"
+    "./cdn": {
+      "types": "./dist/browser.d.ts",
+      "default": "./folder-api.cdn.js"
+    }
   },
+  "files": ["dist", "folder-api.cdn.js", "README.md", "LICENSE"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
     "clean": "rimraf dist",
+    "pretest": "npm run build",
     "test": "vitest run",
+    "pretest:browser": "npm run build",
+    "test:browser": "vitest run tests/browser",
     "test:watch": "vitest",
-    "lint": "eslint 'src/**/*.{ts,tsx}'",
+    "lint": "eslint src --ext .ts",
     "prepare": "npm run build"
   },
   "keywords": ["directory", "listing", "folder", "http", "api", "parser"],
@@ -24,12 +31,14 @@
   "devDependencies": {
     "@types/jsdom": "^21.1.7",
     "@types/node": "^20.11.30",
+    "esbuild": "0.21.5",
     "eslint": "^8.57.0",
     "eslint-config-standard-with-typescript": "^43.0.1",
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-n": "^16.6.2",
     "eslint-plugin-promise": "^6.1.1",
     "jsdom": "^24.0.0",
+    "playwright": "1.62.1",
     "rimraf": "^5.0.5",
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"

@@ -3,7 +3,10 @@ export type FolderRole = 'root' | 'self' | 'parent' | 'child';
 
 export interface FolderApiOptions {
   maxDepth?: number; // default 0
+  maxEntries?: number; // default and maximum 50000, includes navigation entries
+  continueOnError?: boolean; // default false, applies to child directory failures
   mode?: 'fetch' | 'iframe' | 'auto'; // default auto
+  cache?: RequestCache; // directory fetch cache policy, default 'default'
   includeMime?: boolean; // default false
   headConcurrency?: number; // default 4
   timeoutMs?: number; // default 15000 per directory
@@ -60,10 +63,18 @@ export interface InternalDirectoryParse {
 
 export interface NormalizedOptions {
   maxDepth: number;
+  maxEntries: number;
+  continueOnError: boolean;
   mode: 'fetch' | 'iframe' | 'auto';
+  cache: RequestCache;
   includeMime: boolean;
   headConcurrency: number;
   timeoutMs: number;
   sameOriginOnly: boolean;
   signal?: AbortSignal;
+}
+
+export interface LoadedDirectory {
+  html: string;
+  url: string;
 }

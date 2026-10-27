@@ -1,48 +1,51 @@
-import { NormalizedOptions } from '../types.js';
+import { LoadedDirectory, NormalizedOptions } from '../types.js';
+import { throwIfAborted } from '../utils/abort.js';
 
-export async function iframeDirectoryHtml(url: string, opts: NormalizedOptions, stats: { iframes: number }): Promise<string> {
-  if (typeof document === 'undefined') {
-    throw new Error('iframe mode not supported in this environment');
-  }
+export async function iframeDirectoryHtml(url: string, opts: NormalizedOptions, stats: { iframes: number }): Promise<LoadedDirectory> {
+  throwIfAborted(opts.signal);
+  if (typeof document === 'undefined') throw new Error('iframe mode not supported in this environment');
   const iframe = document.createElement('iframe');
   iframe.setAttribute('sandbox', 'allow-same-origin');
-  iframe.style.position = 'absolute';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  iframe.style.visibility = 'hidden';
-  document.body.appendChild(iframe);
-  stats.iframes++;
-  const timeout = opts.timeoutMs;
-  return await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('timeout'));
-    }, timeout);
+  Object.assign(iframe.style, { position: 'absolute', width: '0', height: '0', border: '0', visibility: 'hidden' });
+  return await new Promise<LoadedDirectory>((resolve, reject) => {
+    const timer = setTimeout(() => fail(new Error('iframe timeout')), opts.timeoutMs);
     function cleanup() {
       clearTimeout(timer);
       iframe.removeEventListener('load', onLoad);
       iframe.removeEventListener('error', onError);
-      if (iframe.parentElement) iframe.parentElement.removeChild(iframe);
+      opts.signal?.removeEventListener('abort', onAbort);
+      iframe.remove();
+    }
+    function fail(error: unknown) {
+      cleanup();
+      reject(error);
+    }
+    function onAbort() {
+      fail(opts.signal?.reason ?? new DOMException('The operation was aborted', 'AbortError'));
     }
     function onLoad() {
       try {
+        throwIfAborted(opts.signal);
         const doc = iframe.contentDocument;
-        if (!doc) throw new Error('no document');
-        const html = doc.documentElement?.outerHTML || '';
+        if (!doc) throw new Error('Unable to read iframe document. Same-origin access is required.');
+        if (doc.URL === 'about:blank') return;
+        const result = { html: doc.documentElement?.outerHTML || '', url: doc.URL || url };
         cleanup();
-        resolve(html);
-      } catch (e) {
-        cleanup();
-        reject(e);
+        resolve(result);
+      } catch (error) {
+        fail(error);
       }
     }
-    function onError(ev: any) {
-      cleanup();
-      reject(new Error('iframe error'));
+    function onError() { fail(new Error('iframe error')); }
+    iframe.addEventListener('load', onLoad);
+    iframe.addEventListener('error', onError);
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      iframe.src = url;
+      document.body.appendChild(iframe);
+      stats.iframes++;
+    } catch (error) {
+      fail(error);
     }
-    iframe.addEventListener('load', onLoad, { once: true });
-    iframe.addEventListener('error', onError, { once: true });
-    iframe.src = url;
   });
 }
