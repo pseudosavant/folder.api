@@ -52,6 +52,21 @@ describe.each(implementations)('%s request and parsing regressions', (_name, req
     expect(result.stats.iframes).toBe(1);
   });
 
+  it.each(['no-store', 'no-cache', 'reload', 'force-cache', 'only-if-cached'] as const)('does not navigate after a fetch failure with non-default cache policy %s', async cache => {
+    const frames = mockFrames(listing(['stale.txt']));
+    const cause = new TypeError('network unavailable');
+    const fetchMock = vi.fn().mockRejectedValue(cause);
+    vi.stubGlobal('fetch', fetchMock);
+    const error = await request(base, { mode: 'auto', cache }).catch(error => error);
+    expect(error).toMatchObject({ details: { phase: 'fetch', code: 'network', url: base } });
+    expect(error.cause).toBe(cause);
+    expect(error.details.previous).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].cache).toBe(cache);
+    expect(frames).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('iframe')).toHaveLength(0);
+  });
+
   it.each(['fetch', 'iframe', 'auto'] as const)('does not start %s work with an aborted signal', async mode => {
     const controller = new AbortController();
     controller.abort();

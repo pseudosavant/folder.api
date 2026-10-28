@@ -10,6 +10,7 @@ export function createRequestController(signal, timeoutMs) {
     const timer = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
     return {
         signal: controller.signal,
+        abort: () => controller.abort(),
         dispose: () => {
             clearTimeout(timer);
             signal?.removeEventListener('abort', onAbort);

@@ -11,13 +11,13 @@ export async function folderApiRequest(url, options) {
         allFolders: [],
         allFiles: [],
         errors: [],
+        errorDetails: [],
         stats: { fetches: 0, iframes: 0, heads: 0 },
-        safetyCount: 0,
         maxDepthEncountered: 0
     };
     const rootNode = await traverse(url, opts, state);
     if (opts.includeMime) {
-        await enrichMime(state.allFiles, opts, state.stats, state.errors);
+        await enrichMime(state.allFiles, opts, state.stats, state);
     }
     const durationMs = (performance.now?.() ?? Date.now()) - started;
     const entries = [...state.allFolders, ...state.allFiles];
@@ -29,6 +29,7 @@ export async function folderApiRequest(url, options) {
         entries,
         generatedAt: new Date().toISOString(),
         errors: state.errors,
+        errorDetails: state.errorDetails,
         stats: {
             fetches: state.stats.fetches,
             iframes: state.stats.iframes,

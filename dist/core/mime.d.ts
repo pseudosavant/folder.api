@@ -1,4 +1,6 @@
-import { FileEntry, NormalizedOptions } from '../types.js';
+import { FileEntry } from '../types.js';
+import { NormalizedOptions } from '../internal/types.js';
+import { ErrorSink } from '../utils/errors.js';
 export declare function enrichMime(files: FileEntry[], opts: NormalizedOptions, stats: {
     heads: number;
-}, errors: string[]): Promise<void>;
+}, sink: ErrorSink): Promise<void>;

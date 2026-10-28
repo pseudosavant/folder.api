@@ -11,5 +11,8 @@ describe('classifyEntry', () => {
   it('heuristic folder by keyword', () => {
     expect(classifyEntry('https://x/y/thing', ' <dir> ')).toBe('folder');
   });
+  it.each(['Directory documentation', 'folder guide', 'dir notes'])('does not treat the description %s as a type marker', text => {
+    expect(classifyEntry('https://x/y/README', text)).toBe('file');
+  });
 });
 

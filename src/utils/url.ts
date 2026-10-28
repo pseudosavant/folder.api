@@ -34,10 +34,6 @@ function canonicalPath(pathname: string): string {
   });
 }
 
-export function isSameOrigin(a: URL, b: URL): boolean {
-  return a.protocol === b.protocol && a.host.toLowerCase() === b.host.toLowerCase();
-}
-
 export function parentDirectory(u: URL): string | null {
   const parts = u.pathname.split('/').filter(p => p.length > 0);
   if (parts.length === 0) return null; // already root
@@ -47,14 +43,6 @@ export function parentDirectory(u: URL): string | null {
 
 export function rootDirectory(u: URL): string {
   return `${u.protocol}//${u.host}/`;
-}
-
-export function lastSegment(u: URL): { raw: string; decoded: string; } {
-  const parts = u.pathname.split('/').filter(Boolean);
-  const raw = parts[parts.length - 1] ?? '';
-  let decoded = raw;
-  try { decoded = decodeURIComponent(raw); } catch { /* swallow */ }
-  return { raw, decoded };
 }
 
 export function isHiddenName(name: string): boolean {

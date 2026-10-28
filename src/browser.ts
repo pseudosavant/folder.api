@@ -4,4 +4,4 @@ const global = globalThis as typeof globalThis & { folderApiRequest?: typeof fol
 if (!global.folderApiRequest) global.folderApiRequest = folderApiRequest;
 
 export { folderApiRequest };
-export type { FolderApiOptions, FolderApiResult } from './types.js';
+export type { FolderApiOptions, FolderApiResult, FolderApiErrorDetail, EntryProvenance } from './types.js';

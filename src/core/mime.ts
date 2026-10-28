@@ -1,8 +1,9 @@
-import { FileEntry, NormalizedOptions } from '../types.js';
+import { FileEntry } from '../types.js';
+import { NormalizedOptions } from '../internal/types.js';
 import { createRequestController, throwIfAborted } from '../utils/abort.js';
-import { pushError } from '../utils/errors.js';
+import { ErrorSink, recordError, requestFailure } from '../utils/errors.js';
 
-export async function enrichMime(files: FileEntry[], opts: NormalizedOptions, stats: { heads: number }, errors: string[]): Promise<void> {
+export async function enrichMime(files: FileEntry[], opts: NormalizedOptions, stats: { heads: number }, sink: ErrorSink): Promise<void> {
   throwIfAborted(opts.signal);
   if (!opts.includeMime || files.length === 0) return;
   let next = 0;
@@ -13,24 +14,35 @@ export async function enrichMime(files: FileEntry[], opts: NormalizedOptions, st
       if (file.mime != null && file.size != null) continue;
       const request = createRequestController(opts.signal, opts.timeoutMs);
       try {
+        stats.heads++;
         const res = await fetch(file.url, { method: 'HEAD', signal: request.signal });
         throwIfAborted(opts.signal);
-        stats.heads++;
         if (res.ok) {
-          if (file.mime == null) file.mime = res.headers.get('content-type');
+          if (file.mime == null) {
+            file.mime = res.headers.get('content-type');
+            if (opts.includeProvenance && file.mime !== null) {
+              (file.provenance ??= {}).mime = { source: 'head', raw: file.mime };
+            }
+          }
           const length = res.headers.get('content-length');
           if (file.size == null && length && /^\d+$/.test(length)) {
             const size = Number(length);
-            if (Number.isSafeInteger(size) && size >= 0) file.size = size;
+            if (Number.isSafeInteger(size) && size >= 0) {
+              file.size = size;
+              if (opts.includeProvenance) (file.provenance ??= {}).size = { source: 'head', raw: length, precision: 'exact' };
+            }
           }
         } else if (res.status === 405 || res.status === 501) {
-          pushError(errors, 'mime', `HEAD not supported for ${file.url}`);
+          recordError(sink, { category: 'mime', code: 'unsupported-method', phase: 'head', url: file.url, status: res.status,
+            message: `mime: HEAD not supported for ${file.url}` });
         } else {
-          pushError(errors, 'mime', `HEAD ${res.status} for ${file.url}`);
+          recordError(sink, { category: 'mime', code: 'http', phase: 'head', url: file.url, status: res.status,
+            message: `mime: HEAD ${res.status} for ${file.url}` });
         }
-      } catch {
+      } catch (error) {
         throwIfAborted(opts.signal);
-        pushError(errors, 'mime', `failed HEAD for ${file.url}`);
+        const failure = requestFailure(request.signal.aborted ? request.signal.reason : error, 'head', file.url, opts.timeoutMs);
+        recordError(sink, { ...failure.details, message: `mime: ${failure.message}` });
       } finally {
         request.dispose();
       }

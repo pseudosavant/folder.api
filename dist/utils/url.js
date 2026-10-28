@@ -31,9 +31,6 @@ function canonicalPath(pathname) {
         return /^[\w.~-]$/.test(decoded) ? decoded : encoded.toUpperCase();
     });
 }
-export function isSameOrigin(a, b) {
-    return a.protocol === b.protocol && a.host.toLowerCase() === b.host.toLowerCase();
-}
 export function parentDirectory(u) {
     const parts = u.pathname.split('/').filter(p => p.length > 0);
     if (parts.length === 0)
@@ -43,16 +40,6 @@ export function parentDirectory(u) {
 }
 export function rootDirectory(u) {
     return `${u.protocol}//${u.host}/`;
-}
-export function lastSegment(u) {
-    const parts = u.pathname.split('/').filter(Boolean);
-    const raw = parts[parts.length - 1] ?? '';
-    let decoded = raw;
-    try {
-        decoded = decodeURIComponent(raw);
-    }
-    catch { /* swallow */ }
-    return { raw, decoded };
 }
 export function isHiddenName(name) {
     return name.startsWith('.') && name !== '.' && name !== '..';

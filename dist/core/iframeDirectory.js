@@ -1,4 +1,6 @@
 import { throwIfAborted } from '../utils/abort.js';
+import { requestFailure } from '../utils/errors.js';
+import { checkSerializedSize, listingContentType, validateListingDocument } from '../utils/document.js';
 export async function iframeDirectoryHtml(url, opts, stats) {
     throwIfAborted(opts.signal);
     if (typeof document === 'undefined')
@@ -7,7 +9,7 @@ export async function iframeDirectoryHtml(url, opts, stats) {
     iframe.setAttribute('sandbox', 'allow-same-origin');
     Object.assign(iframe.style, { position: 'absolute', width: '0', height: '0', border: '0', visibility: 'hidden' });
     return await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => fail(new Error('iframe timeout')), opts.timeoutMs);
+        const timer = setTimeout(() => fail(new DOMException('iframe timeout', 'TimeoutError')), opts.timeoutMs);
         function cleanup() {
             clearTimeout(timer);
             iframe.removeEventListener('load', onLoad);
@@ -17,7 +19,8 @@ export async function iframeDirectoryHtml(url, opts, stats) {
         }
         function fail(error) {
             cleanup();
-            reject(error);
+            reject(opts.signal?.aborted ? opts.signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
+                : requestFailure(error, 'iframe', url, opts.timeoutMs));
         }
         function onAbort() {
             fail(opts.signal?.reason ?? new DOMException('The operation was aborted', 'AbortError'));
@@ -30,7 +33,13 @@ export async function iframeDirectoryHtml(url, opts, stats) {
                     throw new Error('Unable to read iframe document. Same-origin access is required.');
                 if (doc.URL === 'about:blank')
                     return;
-                const result = { html: doc.documentElement?.outerHTML || '', url: doc.URL || url };
+                const finalUrl = doc.URL || url;
+                const contentType = listingContentType(doc.contentType, 'iframe', finalUrl);
+                validateListingDocument(doc, contentType, finalUrl);
+                const html = contentType === 'application/xhtml+xml' ? new XMLSerializer().serializeToString(doc.documentElement)
+                    : doc.documentElement?.outerHTML || '';
+                checkSerializedSize(html, finalUrl, opts.maxResponseBytes);
+                const result = { html, url: finalUrl, contentType };
                 cleanup();
                 resolve(result);
             }

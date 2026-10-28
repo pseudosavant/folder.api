@@ -1,4 +1,4 @@
-import { FolderApiOptions, FolderApiResult, FileEntry, FolderEntry } from './types.js';
+import { FolderApiOptions, FolderApiResult, FileEntry, FolderEntry, FolderApiErrorDetail } from './types.js';
 import { normalizeOptions } from './options.js';
 import { traverse } from './core/recursion.js';
 import { enrichMime } from './core/mime.js';
@@ -13,13 +13,13 @@ export async function folderApiRequest(url: string, options?: FolderApiOptions):
     allFolders: [] as FolderEntry[],
     allFiles: [] as FileEntry[],
     errors: [] as string[],
+    errorDetails: [] as FolderApiErrorDetail[],
     stats: { fetches: 0, iframes: 0, heads: 0 },
-    safetyCount: 0,
     maxDepthEncountered: 0
   };
   const rootNode = await traverse(url, opts, state);
   if (opts.includeMime) {
-    await enrichMime(state.allFiles, opts, state.stats, state.errors);
+    await enrichMime(state.allFiles, opts, state.stats, state);
   }
   const durationMs = (performance.now?.() ?? Date.now()) - started;
   const entries = [...state.allFolders, ...state.allFiles];
@@ -31,6 +31,7 @@ export async function folderApiRequest(url: string, options?: FolderApiOptions):
     entries,
     generatedAt: new Date().toISOString(),
     errors: state.errors,
+    errorDetails: state.errorDetails,
     stats: {
       fetches: state.stats.fetches,
       iframes: state.stats.iframes,

@@ -1,15 +1,15 @@
-import { FolderNode, FolderEntry, FileEntry, NormalizedOptions } from '../types.js';
-interface RecursionState {
+import { FolderNode, FolderEntry, FileEntry } from '../types.js';
+import { NormalizedOptions } from '../internal/types.js';
+import { ErrorSink } from '../utils/errors.js';
+interface RecursionState extends ErrorSink {
     visited: Set<string>;
     allFolders: FolderEntry[];
     allFiles: FileEntry[];
-    errors: string[];
     stats: {
         fetches: number;
         iframes: number;
         heads: number;
     };
-    safetyCount: number;
     maxDepthEncountered: number;
 }
 export declare function traverse(startUrl: string, opts: NormalizedOptions, state: RecursionState): Promise<FolderNode>;

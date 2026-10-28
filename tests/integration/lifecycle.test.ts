@@ -17,7 +17,10 @@ afterEach(() => {
 });
 
 describe.each([['TypeScript', folderApiRequest], ['browser bundle', browserRequest]] as const)('%s request lifecycle', (_name, request) => {
-  it.each(['cancel', 'timeout'] as const)('handles %s while reading a directory response body', async action => {
+  it.each([
+    ['cancel', 'auto', 'default'], ['cancel', 'auto', 'no-store'],
+    ['timeout', 'fetch', 'default'], ['timeout', 'auto', 'no-store']
+  ] as const)('handles %s in %s mode with cache %s while reading a directory response body', async (action, mode, cache) => {
     vi.useFakeTimers();
     const controller = new AbortController();
     const reason = new Error('stop body reading');
@@ -26,21 +29,26 @@ describe.each([['TypeScript', folderApiRequest], ['browser bundle', browserReque
     let bodyStarted!: () => void;
     const ready = new Promise<void>(resolve => { bodyStarted = resolve; });
     const fetchMock = vi.fn(async (_url, init) => {
-      const res = response();
-      vi.spyOn(res, 'text').mockImplementation(() => {
+      const res = new Response(new ReadableStream({
+        start(stream) {
+          init.signal.addEventListener('abort', () => stream.error(init.signal.reason), { once: true });
+        }
+      }), { headers: { 'Content-Type': 'text/html' } });
+      const getReader = res.body!.getReader.bind(res.body);
+      vi.spyOn(res.body!, 'getReader').mockImplementation(() => {
         bodyStarted();
-        return waitForAbort(init.signal);
+        return getReader();
       });
       return res;
     });
     vi.stubGlobal('fetch', fetchMock);
-    const pending = request(base, { mode: action === 'cancel' ? 'auto' : 'fetch', timeoutMs: 100, signal: controller.signal }).catch(error => error);
+    const pending = request(base, { mode, cache, timeoutMs: 100, signal: controller.signal }).catch(error => error);
     await ready;
     if (action === 'cancel') controller.abort(reason);
     else await vi.advanceTimersByTimeAsync(100);
     const error = await pending;
     if (action === 'cancel') expect(error).toBe(reason);
-    else expect(error).toMatchObject({ name: 'TimeoutError' });
+    else expect(error).toMatchObject({ name: 'TimeoutError', details: { code: 'timeout', phase: 'fetch' } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(document.querySelectorAll('iframe')).toHaveLength(0);
     expect(remove.mock.calls).toEqual(add.mock.calls.map(([type, callback]) => [type, callback]));
@@ -59,7 +67,7 @@ describe.each([['TypeScript', folderApiRequest], ['browser bundle', browserReque
     else await vi.advanceTimersByTimeAsync(100);
     const error = await pending;
     if (action === 'cancel') expect(error).toBe(reason);
-    else expect(error.message).toBe('iframe timeout');
+    else expect(error).toMatchObject({ name: 'TimeoutError', details: { phase: 'iframe', code: 'timeout', url: base } });
     expect(document.querySelectorAll('iframe')).toHaveLength(0);
     expect(remove.mock.calls).toEqual(add.mock.calls.map(([type, callback]) => [type, callback]));
     expect(vi.getTimerCount()).toBe(0);
@@ -86,8 +94,9 @@ describe.each([['TypeScript', folderApiRequest], ['browser bundle', browserReque
     await vi.advanceTimersByTimeAsync(100);
     const result = await pending;
     expect(heads).toBe(2);
+    expect(result.stats.heads).toBe(2);
     expect(result.files.map(file => file.size)).toEqual([null, 123]);
-    expect(result.errors).toEqual(['mime: failed HEAD for ' + base + 'one.mp4']);
+    expect(result.errors).toEqual(['mime: HEAD ' + base + 'one.mp4 timed out after 100ms']);
     expect(remove.mock.calls).toEqual(add.mock.calls.map(([type, callback]) => [type, callback]));
     expect(vi.getTimerCount()).toBe(0);
   });
